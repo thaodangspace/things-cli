@@ -1,4 +1,4 @@
-things-cli
+/things-cli
 dist/
 .cache/
 .DS_Store
