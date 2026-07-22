@@ -1,0 +1,54 @@
+version: 2
+
+project_name: things-cli
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: things-cli
+    main: ./cmd/things-cli
+    binary: things-cli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/thaodangspace/things-cli/cli.version={{ .Version }}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+brews:
+  - name: things-cli
+    repository:
+      owner: thaodangspace
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/thaodangspace/things-cli"
+    description: "Things 3 CLI for agents and humans (JSON output by default)"
+    license: "MIT"
+    directory: Formula
+    install: |
+      bin.install "things-cli"
+    test: |
+      system "#{bin}/things-cli", "--version"

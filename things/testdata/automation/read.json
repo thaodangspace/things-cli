@@ -1,0 +1,42 @@
+{
+  "list": [
+    {
+      "id": "todo-today",
+      "type": "to-do",
+      "status": "open",
+      "title": "Today task",
+      "start": "unknown",
+      "start_date": "2026-07-22",
+      "deadline": null,
+      "creation_date": "2026-07-22T08:00:00Z",
+      "completion_date": null,
+      "area": null,
+      "project": null,
+      "heading": null,
+      "tags": ["work"],
+      "checklist": [],
+      "trashed": false
+    }
+  ],
+  "query": [],
+  "get": {
+    "id": "todo-today",
+    "type": "to-do",
+    "status": "open",
+    "title": "Today task",
+    "start": "unknown",
+    "start_date": "2026-07-22",
+    "deadline": null,
+    "creation_date": "2026-07-22T08:00:00Z",
+    "completion_date": null,
+    "area": null,
+    "project": null,
+    "heading": null,
+    "tags": ["work"],
+    "checklist": [],
+    "trashed": false
+  },
+  "list-projects": [],
+  "list-areas": [{"id": "area-work", "title": "Work"}],
+  "list-tags": [{"id": "tag-work", "title": "work"}]
+}
