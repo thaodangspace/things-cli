@@ -74,6 +74,7 @@ things-cli add --title "Follow up" [--notes "..."] \
   [--when today|tomorrow|anytime|someday|YYYY-MM-DD[@HH:MM]] \
   [--deadline YYYY-MM-DD] [--tags work,urgent] \
   [--list LIST-NAME|--list-id LIST-ID] \
+  [--project PROJECT-NAME|--project-id PROJECT-ID] \
   [--completed|--canceled] [--reveal] [--wait]
 ```
 

@@ -492,6 +492,22 @@ function resolveAreaTarget(app, id, name) {
   throw new Error("area not found: " + (id || name));
 }
 
+function resolveProjectTarget(app, id, name) {
+  if (id) {
+    try {
+      var byID = app.projects.byId(id);
+      if (byID.exists()) return byID;
+    } catch (error) {}
+  }
+  if (name) {
+    try {
+      var byName = app.projects.byName(name);
+      if (byName.exists()) return byName;
+    } catch (error) {}
+  }
+  throw new Error("project not found: " + (id || name));
+}
+
 function applyWhen(app, task, value) {
   if (!value) return;
   var target = relativeDate(value);
@@ -507,8 +523,10 @@ function applyWhen(app, task, value) {
   throw new Error("unsupported schedule: " + value);
 }
 
-function applyDestination(app, task, list, listID) {
-  if (list || listID) app.move(task, { to: resolveListTarget(app, listID, list) });
+function applyListDestination(app, task, request) {
+  if (request.list || request.list_id) {
+    app.move(task, { to: resolveListTarget(app, request.list_id, request.list) });
+  }
 }
 
 function applyCommonFields(app, task, request) {
@@ -516,7 +534,6 @@ function applyCommonFields(app, task, request) {
   if (request.tags !== undefined) task.tagNames = (request.tags || []).join(",");
   if (request.deadline) task.dueDate = parseDateValue(request.deadline);
   if (request.when) applyWhen(app, task, request.when);
-  applyDestination(app, task, request.list, request.list_id);
 }
 
 function actionResult(action, task) {
@@ -524,9 +541,21 @@ function actionResult(action, task) {
 }
 
 function addTodo(app, request) {
-  var task = app.make({ new: "to do", withProperties: { name: request.title } });
-  applyCommonFields(app, task, request);
   if (request.completed && request.canceled) throw new Error("completed and canceled cannot both be true");
+  if ((request.list || request.list_id) && (request.project || request.project_id)) {
+    throw new Error("a todo cannot target both a list and a project");
+  }
+  var project = null;
+  var task;
+  if (request.project || request.project_id) {
+    project = resolveProjectTarget(app, request.project_id, request.project);
+    task = app.ToDo({ name: request.title });
+    project.toDos.push(task);
+  } else {
+    task = app.make({ new: "to do", withProperties: { name: request.title } });
+  }
+  applyCommonFields(app, task, request);
+  if (!project) applyListDestination(app, task, request);
   if (request.completed) task.status = "completed";
   if (request.canceled) task.status = "canceled";
   if (request.reveal) task.show();
@@ -569,7 +598,7 @@ function updateTask(app, request) {
   }
   if (request.deadline !== undefined) task.dueDate = request.deadline ? parseDateValue(request.deadline) : null;
   if (request.when !== undefined) applyWhen(app, task, request.when);
-  applyDestination(app, task, request.list, request.list_id);
+  applyListDestination(app, task, request);
   if (request.completed !== undefined && request.completed) task.status = "completed";
   if (request.completed !== undefined && !request.completed && text(callValue(task, "status")) === "completed") task.status = "open";
   if (request.canceled !== undefined && request.canceled) task.status = "canceled";

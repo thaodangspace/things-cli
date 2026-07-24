@@ -153,6 +153,77 @@ func TestExecScriptContextTimeout(t *testing.T) {
 	}
 }
 
+func TestExecScriptProjectTodoCreationContract(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("osascript is a macOS dependency")
+	}
+
+	const applicationLine = `var app = Application("com.culturedcode.ThingsMac");`
+	if count := strings.Count(defaultAutomationScript, applicationLine); count != 1 {
+		t.Fatalf("Things application construction count=%d, want 1", count)
+	}
+	source := strings.Replace(defaultAutomationScript, applicationLine,
+		`var app = contractApplication("com.culturedcode.ThingsMac");`, 1) + `
+var contractInserted = false;
+var contractTask = {
+  id: function () {
+    if (!contractInserted) throw new Error("todo was not inserted into project");
+    return "created-id";
+  },
+  show: function () {}
+};
+var contractProject = {
+  exists: function () { return true; },
+  id: function () { return "project-id"; },
+  name: function () { return "vsee"; },
+  toDos: {
+    push: function (task) {
+      if (task !== contractTask) throw new Error("unexpected todo inserted into project");
+      contractInserted = true;
+    }
+  }
+};
+var missingProject = {
+  exists: function () { return false; }
+};
+function contractApplication(identifier) {
+  if (identifier !== "com.culturedcode.ThingsMac") throw new Error("unexpected application: " + identifier);
+  return {
+    projects: {
+      byId: function (id) { return id === "project-id" ? contractProject : missingProject; },
+      byName: function (name) { return name === "vsee" ? contractProject : missingProject; }
+    },
+    ToDo: function (properties) {
+      if (!properties || properties.name !== "test2") throw new Error("unexpected todo properties");
+      return contractTask;
+    },
+    make: function () { throw new Error("make must not be called for a project destination"); },
+    move: function () { throw new Error("move must not be called for a project destination"); }
+  };
+}
+`
+
+	for _, request := range []AddRequest{
+		{Title: "test2", Project: "vsee"},
+		{Title: "test2", ProjectID: "project-id"},
+	} {
+		var result ActionResult
+		if err := RunJSON(context.Background(), ExecScript{Source: source}, "add", request, &result); err != nil {
+			t.Fatalf("add request=%+v: %v", request, err)
+		}
+		if result.Action != "add" || result.ID != "created-id" {
+			t.Fatalf("result=%+v", result)
+		}
+	}
+
+	var result ActionResult
+	err := RunJSON(context.Background(), ExecScript{Source: source}, "add",
+		AddRequest{Title: "test2", Project: "missing"}, &result)
+	if err == nil || !strings.Contains(err.Error(), "project not found: missing") {
+		t.Fatalf("error=%v, want project-not-found failure", err)
+	}
+}
+
 func TestExecScriptHealthRoundTrip(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("osascript is a macOS dependency")

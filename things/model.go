@@ -101,6 +101,8 @@ type AddRequest struct {
 	Tags      []string `json:"tags"`
 	List      string   `json:"list"`
 	ListID    string   `json:"list_id"`
+	Project   string   `json:"project"`
+	ProjectID string   `json:"project_id"`
 	Completed bool     `json:"completed"`
 	Canceled  bool     `json:"canceled"`
 	Reveal    bool     `json:"reveal"`

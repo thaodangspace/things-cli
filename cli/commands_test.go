@@ -127,6 +127,17 @@ func (fixtureService) ListTags(context.Context) ([]things.Tag, error) {
 func (fixtureService) Add(context.Context, things.AddRequest) (things.ActionResult, error) {
 	return things.ActionResult{Action: "add", ID: "todo-today"}, nil
 }
+
+type recordingService struct {
+	fixtureService
+	addRequest things.AddRequest
+}
+
+func (s *recordingService) Add(_ context.Context, request things.AddRequest) (things.ActionResult, error) {
+	s.addRequest = request
+	return things.ActionResult{Action: "add", ID: "todo-today"}, nil
+}
+
 func (fixtureService) AddProject(context.Context, things.AddProjectRequest) (things.ActionResult, error) {
 	return things.ActionResult{Action: "add-project", ID: "proj-alpha"}, nil
 }
@@ -280,6 +291,24 @@ func TestAddCommandUsesSynchronousAutomation(t *testing.T) {
 	}
 }
 
+func TestAddCommandSupportsProjectDestination(t *testing.T) {
+	service := &recordingService{}
+	oldService := thingsService
+	thingsService = service
+	t.Cleanup(func() { thingsService = oldService })
+	root := newRootCommand()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"add", "--title", "Project Task", "--project", "Alpha Project", "--project-id", "proj-alpha"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if service.addRequest.Project != "Alpha Project" || service.addRequest.ProjectID != "proj-alpha" {
+		t.Fatalf("add request=%+v", service.addRequest)
+	}
+}
+
 func TestUpdateDoesNotRequireToken(t *testing.T) {
 	out, err := runCLI(t, "update", "todo-today", "--notes", "", "--completed")
 	if err != nil {
@@ -320,6 +349,7 @@ func TestUsageErrors(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"add", "--title", "Task", "--checklist-items", "one"},
+		{"add", "--title", "Task", "--list", "Today", "--project", "Project"},
 		{"update", "id", "--heading", "Heading"},
 		{"add", "--title", "Task", "--when", "evening"},
 	} {

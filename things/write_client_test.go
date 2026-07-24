@@ -32,6 +32,9 @@ func TestAutomationClientWriteRequests(t *testing.T) {
 	if got, err := client.Add(ctx, AddRequest{Title: "Mua sữa", Tags: []string{"home"}}); err != nil || got.ID != "created-id" {
 		t.Fatalf("add=%+v err=%v", got, err)
 	}
+	if got, err := client.Add(ctx, AddRequest{Title: "Project task", Project: "Project", ProjectID: "project-id"}); err != nil || got.ID != "created-id" {
+		t.Fatalf("add project task=%+v err=%v", got, err)
+	}
 	if got, err := client.AddProject(ctx, AddProjectRequest{Title: "Project"}); err != nil || got.Action != "add-project" {
 		t.Fatalf("add-project=%+v err=%v", got, err)
 	}
@@ -51,12 +54,16 @@ func TestAutomationClientWriteRequests(t *testing.T) {
 	if _, err := client.Search(ctx, "quotes ' and unicode sữa"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"add", "add-project", "update", "complete", "cancel", "show", "search"}
+	want := []string{"add", "add", "add-project", "update", "complete", "cancel", "show", "search"}
 	if !reflect.DeepEqual(runner.operations, want) {
 		t.Fatalf("operations=%v want=%v", runner.operations, want)
 	}
 	request, ok := runner.requests[0].(AddRequest)
 	if !ok || request.Title != "Mua sữa" {
 		t.Fatalf("add request=%#v", runner.requests[0])
+	}
+	projectRequest, ok := runner.requests[1].(AddRequest)
+	if !ok || projectRequest.Project != "Project" || projectRequest.ProjectID != "project-id" {
+		t.Fatalf("project add request=%#v", runner.requests[1])
 	}
 }

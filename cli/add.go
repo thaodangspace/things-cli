@@ -7,7 +7,7 @@ import (
 )
 
 func newAddCommand() *cobra.Command {
-	var title, notes, when, deadline, tags, list, listID string
+	var title, notes, when, deadline, tags, list, listID, project, projectID string
 	var completed, canceled, reveal, wait bool
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -26,6 +26,9 @@ func newAddCommand() *cobra.Command {
 			if completed && canceled {
 				return usageErrorf("--completed and --canceled cannot both be set")
 			}
+			if (project != "" || projectID != "") && (list != "" || listID != "") {
+				return usageErrorf("--project/--project-id cannot be combined with --list/--list-id")
+			}
 			if err := validateCaps(t, notes, nil); err != nil {
 				return err
 			}
@@ -34,6 +37,7 @@ func newAddCommand() *cobra.Command {
 			res, err := currentThingsService().Add(ctx, things.AddRequest{
 				Title: t, Notes: notes, When: when, Deadline: deadline,
 				Tags: splitCSV(tags), List: list, ListID: listID,
+				Project: project, ProjectID: projectID,
 				Completed: completed, Canceled: canceled, Reveal: reveal,
 			})
 			if err != nil {
@@ -49,6 +53,8 @@ func newAddCommand() *cobra.Command {
 	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tags")
 	cmd.Flags().StringVar(&list, "list", "", "destination list name")
 	cmd.Flags().StringVar(&listID, "list-id", "", "destination list id")
+	cmd.Flags().StringVar(&project, "project", "", "destination project name")
+	cmd.Flags().StringVar(&projectID, "project-id", "", "destination project id")
 	cmd.Flags().BoolVar(&completed, "completed", false, "create completed")
 	cmd.Flags().BoolVar(&canceled, "canceled", false, "create canceled")
 	cmd.Flags().BoolVar(&reveal, "reveal", false, "reveal in Things")

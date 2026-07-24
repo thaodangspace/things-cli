@@ -40,7 +40,8 @@ things-cli list-tags
 Automation writes are synchronous and return the affected Things ID:
 
 ```bash
-things-cli add --title "Task" [--notes ...] [--when today] [--deadline yyyy-mm-dd] [--tags a,b] [--wait]
+things-cli add --title "Task" [--notes ...] [--when today] [--deadline yyyy-mm-dd] [--tags a,b] \
+  [--list LIST-NAME|--list-id LIST-ID] [--project PROJECT|--project-id PROJECT-ID] [--wait]
 things-cli add-project --title "Project" [--to-dos $'one\ntwo'] [--area Work] [--wait]
 things-cli update <id> --title "New" --completed
 things-cli complete <id>
