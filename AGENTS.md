@@ -12,6 +12,7 @@
 - `things/automation.js` — fixed JXA entrypoint using Things' public scripting dictionary.
 - `things/testdata/automation/` — committed JSON response fixtures.
 - `skills/things-cli/SKILL.md` — agent skill for installing/using the CLI.
+- `docs/` — Astro/Starlight static documentation site, built independently from the Go CLI.
 
 ## Automation boundary
 
@@ -40,6 +41,15 @@ Use a local cache when needed:
 mkdir -p .cache/go-build .cache/gopath
 GOTOOLCHAIN=local GOCACHE=$PWD/.cache/go-build GOPATH=$PWD/.cache/gopath go test ./...
 ```
+
+The docs site uses npm from `docs/` and emits static output to `docs/dist/`:
+
+```bash
+make docs-build
+```
+
+For Cloudflare Pages, use `docs` as the root directory, `npm run build` as the
+build command, and `dist` as the output directory.
 
 The opt-in read-only smoke test requires Things 3 and Automation permission:
 

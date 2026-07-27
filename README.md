@@ -62,6 +62,12 @@ things-cli search "query"
 
 Use `--verbose` for sanitized automation operation diagnostics. User payloads are not logged. A write timeout may have an indeterminate outcome and is never retried automatically.
 
+## Documentation
+
+The documentation site is an Astro/Starlight app under `docs/`. Run it locally
+with `make docs-dev`, or build the static site with `make docs-build`. Cloudflare
+Pages deployment settings are documented in [`docs/README.md`](docs/README.md).
+
 ## Development
 
 ```bash

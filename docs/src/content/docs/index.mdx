@@ -1,0 +1,37 @@
+---
+title: things-cli
+description: Control Things 3 from the command line with a scriptable macOS CLI.
+template: splash
+hero:
+  tagline: A JSON-first CLI for Things 3, built for agents and scripts.
+  actions:
+    - text: Get started
+      link: /getting-started/
+      icon: right-arrow
+    - text: Browse commands
+      link: /commands/
+      icon: open-book
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+`things-cli` controls Things 3 through its public macOS automation dictionary. It
+keeps the command-line boundary predictable: JSON envelopes by default, readable
+summaries with `--human`, and explicit exit codes for scripts.
+
+<CardGrid stagger>
+  <Card title="Install quickly" icon="rocket">
+    Install the latest release with `go install` and check the command with `things-cli --help`.
+  </Card>
+  <Card title="Read and query" icon="magnifier">
+    List native Things views or query reachable todos and projects by status, type, tag, area, or project.
+  </Card>
+  <Card title="Automate safely" icon="setting">
+    Add, update, complete, cancel, reveal, and search through Things automation without database access.
+  </Card>
+</CardGrid>
+
+:::caution[macOS and Things 3 required]
+The CLI runs on macOS and requires Things 3 plus Automation permission for the
+terminal, agent host, or executable invoking it.
+:::

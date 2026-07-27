@@ -1,5 +1,8 @@
 /things-cli
 dist/
+docs/node_modules/
+docs/.astro/
+docs/dist/
 .cache/
 .DS_Store
 *.test
