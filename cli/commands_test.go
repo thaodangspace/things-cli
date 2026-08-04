@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -361,6 +362,7 @@ type recordingModifyService struct {
 	deleteID      string
 	emptyTrash    int
 	showTargets   []string
+	showErr       error
 }
 
 func (s *recordingModifyService) Move(_ context.Context, request things.MoveRequest) (things.ActionResult, error) {
@@ -385,6 +387,9 @@ func (s *recordingModifyService) EmptyTrash(context.Context) (things.ActionResul
 
 func (s *recordingModifyService) Show(_ context.Context, target string) (things.ActionResult, error) {
 	s.showTargets = append(s.showTargets, target)
+	if s.showErr != nil {
+		return things.ActionResult{}, s.showErr
+	}
 	return things.ActionResult{Action: "show", ID: target}, nil
 }
 
@@ -499,6 +504,42 @@ func TestDeleteAndEmptyTrashCommands(t *testing.T) {
 	decodeData(t, out.String(), &result)
 	if result.Action != "empty-trash" || service.emptyTrash != 1 {
 		t.Fatalf("empty-trash result=%+v calls=%d", result, service.emptyTrash)
+	}
+
+	out.Reset()
+	root = newRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"empty-trash", "--yes", "--human"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out.String()) != "empty-trash" || service.emptyTrash != 2 {
+		t.Fatalf("empty-trash human output=%q calls=%d", out.String(), service.emptyTrash)
+	}
+}
+
+func TestDeleteRevealFailureStillReturnsDeleteSuccess(t *testing.T) {
+	oldService := thingsService
+	service := &recordingModifyService{showErr: errors.New("Things UI unavailable")}
+	thingsService = service
+	t.Cleanup(func() { thingsService = oldService })
+
+	root := newRootCommand()
+	var out, errOut bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	root.SetArgs([]string{"delete", "todo-id", "--reveal"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var result things.ActionResult
+	decodeData(t, out.String(), &result)
+	if result.Action != "delete" || result.ID != "todo-id" {
+		t.Fatalf("result=%+v", result)
+	}
+	if !strings.Contains(errOut.String(), "warning: item was deleted") {
+		t.Fatalf("warning=%q", errOut.String())
 	}
 }
 

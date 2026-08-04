@@ -1,6 +1,10 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
 
 func newDeleteCommand() *cobra.Command {
 	var reveal bool
@@ -22,8 +26,10 @@ func newDeleteCommand() *cobra.Command {
 				return err
 			}
 			if reveal {
-				if _, err := currentThingsService().Show(ctx, "trash"); err != nil {
-					return err
+				revealCtx, revealCancel := withTimeout(cmd)
+				defer revealCancel()
+				if _, err := currentThingsService().Show(revealCtx, "trash"); err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: item was deleted, but Trash could not be revealed: %v\n", err)
 				}
 			}
 			return writeSuccess(cmd.OutOrStdout(), res, opts.human, summarizeAction(res))
