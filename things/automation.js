@@ -560,6 +560,15 @@ function hasRelation(object, property) {
   return !!relation && !!(objectID(relation) || objectName(relation));
 }
 
+function deleteRelation(object, property) {
+  var relation = relationValue(object, property);
+  if (!relation) return;
+  if (typeof relation.delete !== "function") {
+    throw new Error("Things does not support deleting the " + property + " relationship");
+  }
+  relation.delete();
+}
+
 function addTodo(app, request) {
   if (request.completed && request.canceled) throw new Error("completed and canceled cannot both be true");
   if ((request.list || request.list_id) && (request.project || request.project_id)) {
@@ -637,8 +646,8 @@ function showTarget(app, target) {
   return { action: "show", id: target };
 }
 
-function isUpcomingListTarget(id, name) {
-  return id === "TMCalendarListSource" || text(name).trim().toLowerCase() === "upcoming";
+function isUpcomingListTarget(target) {
+  return objectID(target) === "TMCalendarListSource";
 }
 
 function validateMoveRequest(request) {
@@ -648,9 +657,6 @@ function validateMoveRequest(request) {
   if (request.area || request.area_id) destinations++;
   if (destinations === 0) throw new Error("no destination supplied");
   if (destinations > 1) throw new Error("move accepts exactly one destination");
-  if ((request.list || request.list_id) && isUpcomingListTarget(request.list_id, request.list)) {
-    throw new Error("moving directly to Upcoming is not supported; use update --when to schedule");
-  }
 }
 
 function moveItem(app, request) {
@@ -659,7 +665,11 @@ function moveItem(app, request) {
   if (!task) throw new Error("item not found: " + request.id);
   var isProject = className(task) === "project";
   if (request.list || request.list_id) {
-    app.move(task, { to: resolveListTarget(app, request.list_id, request.list) });
+    var destination = resolveListTarget(app, request.list_id, request.list);
+    if (isUpcomingListTarget(destination)) {
+      throw new Error("moving directly to Upcoming is not supported; use update --when to schedule");
+    }
+    app.move(task, { to: destination });
     return actionResult("move", task);
   }
   if (request.project || request.project_id) {
@@ -703,8 +713,8 @@ function detachItem(app, request) {
     throw new Error("item is not currently in an area: " + request.id);
   }
   // Projects do not have a project parent; --all still applies to their area.
-  if (request.project && !isProject) task.project = null;
-  if (request.area) task.area = null;
+  if (request.project && !isProject) deleteRelation(task, "project");
+  if (request.area) deleteRelation(task, "area");
   return actionResult("detach", task);
 }
 
