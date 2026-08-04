@@ -97,7 +97,28 @@ things-cli update <id> [--title TITLE] [--notes NOTES] \
   [--project] [--wait]
 ```
 
-`--project` selects the Things project update action. Other status/navigation commands are:
+`--project` selects the Things project update action. Move an item to a built-in list, project, or area (exactly one destination):
+
+```bash
+things-cli move <id> (--list LIST-NAME|--list-id LIST-ID) \
+  (--project PROJECT-NAME|--project-id PROJECT-ID) \
+  (--area AREA-NAME|--area-id AREA-ID) [--wait]
+```
+
+A to-do can move to a list, project, or area; a project can move to a list or an
+area but never into another project. Moving directly into Upcoming is not
+supported — schedule with `update --when ...` instead.
+
+Detach relationships:
+
+```bash
+things-cli detach <id> (--project|--area|--all) [--wait]
+```
+
+`--project` detaches a to-do from its project; `--area` detaches a to-do or
+project from its area; `--all` clears both where applicable.
+
+Other status/navigation commands are:
 
 ```bash
 things-cli complete <id> [--wait]

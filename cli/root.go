@@ -62,7 +62,8 @@ func newRootCommand() *cobra.Command {
 		newInboxCommand(), newTodayCommand(), newUpcomingCommand(), newAnytimeCommand(), newSomedayCommand(), newLogbookCommand(), newTrashCommand(),
 		newListProjectsCommand(), newListAreasCommand(), newListTagsCommand(),
 		newAddCommand(), newAddProjectCommand(),
-		newUpdateCommand(), newCompleteCommand(), newCancelCommand(),
+		newUpdateCommand(), newMoveCommand(), newDetachCommand(),
+		newCompleteCommand(), newCancelCommand(),
 		newShowCommand(), newSearchCommand(),
 	)
 	return root

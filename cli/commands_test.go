@@ -144,6 +144,12 @@ func (fixtureService) AddProject(context.Context, things.AddProjectRequest) (thi
 func (fixtureService) Update(context.Context, things.UpdateRequest) (things.ActionResult, error) {
 	return things.ActionResult{Action: "update", ID: "todo-today"}, nil
 }
+func (fixtureService) Move(context.Context, things.MoveRequest) (things.ActionResult, error) {
+	return things.ActionResult{Action: "move", ID: "todo-today"}, nil
+}
+func (fixtureService) Detach(context.Context, things.DetachRequest) (things.ActionResult, error) {
+	return things.ActionResult{Action: "detach", ID: "todo-today"}, nil
+}
 func (fixtureService) Complete(context.Context, string) (things.ActionResult, error) {
 	return things.ActionResult{Action: "complete", ID: "todo-today"}, nil
 }
@@ -338,6 +344,118 @@ func TestCompleteCancelShowSearch(t *testing.T) {
 		}
 		if !strings.Contains(out.String(), `"ok": true`) {
 			t.Fatalf("%v output = %s", args, out.String())
+		}
+	}
+}
+
+type recordingModifyService struct {
+	fixtureService
+	moveRequest   things.MoveRequest
+	detachRequest things.DetachRequest
+}
+
+func (s *recordingModifyService) Move(_ context.Context, request things.MoveRequest) (things.ActionResult, error) {
+	s.moveRequest = request
+	return things.ActionResult{Action: "move", ID: request.ID}, nil
+}
+
+func (s *recordingModifyService) Detach(_ context.Context, request things.DetachRequest) (things.ActionResult, error) {
+	s.detachRequest = request
+	return things.ActionResult{Action: "detach", ID: request.ID}, nil
+}
+
+func TestMoveCommandDestinationVariants(t *testing.T) {
+	oldService := thingsService
+	service := &recordingModifyService{}
+	thingsService = service
+	t.Cleanup(func() { thingsService = oldService })
+
+	for _, tc := range []struct {
+		args []string
+		want things.MoveRequest
+	}{
+		{args: []string{"move", "todo-id", "--list", "Anytime"}, want: things.MoveRequest{ID: "todo-id", List: "Anytime"}},
+		{args: []string{"move", "todo-id", "--project-id", "proj-alpha"}, want: things.MoveRequest{ID: "todo-id", ProjectID: "proj-alpha"}},
+		{args: []string{"move", "todo-id", "--project", "Launch"}, want: things.MoveRequest{ID: "todo-id", Project: "Launch"}},
+		{args: []string{"move", "todo-id", "--area", "Work"}, want: things.MoveRequest{ID: "todo-id", Area: "Work"}},
+		{args: []string{"move", "todo-id", "--area-id", "area-work"}, want: things.MoveRequest{ID: "todo-id", AreaID: "area-work"}},
+	} {
+		root := newRootCommand()
+		var out bytes.Buffer
+		root.SetOut(&out)
+		root.SetErr(&out)
+		root.SetArgs(tc.args)
+		if err := root.Execute(); err != nil {
+			t.Fatalf("args=%v: %v", tc.args, err)
+		}
+		if service.moveRequest != tc.want {
+			t.Fatalf("args=%v moveRequest=%+v want=%+v", tc.args, service.moveRequest, tc.want)
+		}
+	}
+}
+
+func TestMoveOutputFormats(t *testing.T) {
+	out, err := runCLI(t, "move", "todo-id", "--area", "Work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result things.ActionResult
+	decodeData(t, out, &result)
+	if result.Action != "move" || result.ID != "todo-today" {
+		t.Fatalf("result=%+v", result)
+	}
+
+	out, err = runCLI(t, "detach", "todo-id", "--area", "--human")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "detach todo-today" {
+		t.Fatalf("human output=%q", out)
+	}
+}
+
+func TestDetachCommandScopes(t *testing.T) {
+	oldService := thingsService
+	service := &recordingModifyService{}
+	thingsService = service
+	t.Cleanup(func() { thingsService = oldService })
+
+	for _, tc := range []struct {
+		args []string
+		want things.DetachRequest
+	}{
+		{args: []string{"detach", "todo-id", "--project"}, want: things.DetachRequest{ID: "todo-id", Project: true}},
+		{args: []string{"detach", "todo-id", "--area"}, want: things.DetachRequest{ID: "todo-id", Area: true}},
+		{args: []string{"detach", "todo-id", "--all"}, want: things.DetachRequest{ID: "todo-id", Project: true, Area: true, All: true}},
+	} {
+		root := newRootCommand()
+		var out bytes.Buffer
+		root.SetOut(&out)
+		root.SetErr(&out)
+		root.SetArgs(tc.args)
+		if err := root.Execute(); err != nil {
+			t.Fatalf("args=%v: %v", tc.args, err)
+		}
+		if service.detachRequest != tc.want {
+			t.Fatalf("args=%v detachRequest=%+v want=%+v", tc.args, service.detachRequest, tc.want)
+		}
+	}
+}
+
+func TestMoveDetachUsageErrors(t *testing.T) {
+	for _, args := range [][]string{
+		{"move", "todo-id"}, // no destination
+		{"move", "todo-id", "--list", "Today", "--area", "Work"}, // multiple destinations
+		{"move", "todo-id", "--project", "P", "--area", "A"},     // multiple destinations
+		{"move", "todo-id", "--list", "Upcoming"},                // upcoming unsupported
+		{"move"}, // missing id
+		{"detach", "todo-id", "--project", "--area"}, // exclusive
+		{"detach", "todo-id", "--all", "--project"},  // all exclusive
+		{"detach", "todo-id"},                        // no scope
+	} {
+		_, err := runCLI(t, args...)
+		if exitCodeFor(err) != exitUsage {
+			t.Fatalf("args=%v exit=%d err=%v", args, exitCodeFor(err), err)
 		}
 	}
 }

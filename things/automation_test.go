@@ -224,6 +224,128 @@ function contractApplication(identifier) {
 	}
 }
 
+func TestExecScriptMoveDetachContract(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("osascript is a macOS dependency")
+	}
+
+	const applicationLine = `var app = Application("com.culturedcode.ThingsMac");`
+	if count := strings.Count(defaultAutomationScript, applicationLine); count != 1 {
+		t.Fatalf("Things application construction count=%d, want 1", count)
+	}
+
+	base := strings.Replace(defaultAutomationScript, applicationLine,
+		`var app = contractApplication("com.culturedcode.ThingsMac");`, 1) + `
+var log = { list: null, project: null, area: null };
+var projectRelation = { id: function () { return "parent-1"; }, name: function () { return "Parent"; }, exists: function () { return true; } };
+var areaRelation = { id: function () { return "area-1"; }, name: function () { return "Work"; }, exists: function () { return true; } };
+var todoObj = {
+  id: function () { return "todo-1"; },
+  exists: function () { return true; },
+  properties: function () { return { pcls: "to-do", status: "open", name: "Todo" }; },
+  get project() { return projectRelation; },
+  set project(v) { log.project = (v && v.name) ? v.name() : null; },
+  get area() { return areaRelation; },
+  set area(v) { log.area = (v && v.name) ? v.name() : null; },
+  show: function () {}
+};
+var projObj = {
+  id: function () { return "proj-1"; },
+  exists: function () { return true; },
+  properties: function () { return { pcls: "project", status: "open", name: "Proj" }; },
+  get area() { return areaRelation; },
+  set area(v) { log.area = (v && v.name) ? v.name() : null; },
+  show: function () {}
+};
+function missing() { return { exists: function () { return false; } }; }
+function named(value) { return { exists: function () { return true; }, name: function () { return value; } }; }
+var appObj = {
+  toDos: { byId: function (id) { return id === "todo-1" ? todoObj : missing(); } },
+  projects: {
+    byId: function (id) { if (id === "proj-1") return projObj; return id === "target-1" ? named("Launch") : missing(); },
+    byName: function (name) { return name === "Launch" ? named("Launch") : missing(); }
+  },
+  areas: {
+    byId: function (id) { return id === "area-1" ? named("Work") : missing(); },
+    byName: function (name) { return name === "Work" ? named("Work") : missing(); }
+  },
+  lists: {
+    byId: function () { return missing(); },
+    byName: function (name) { return name === "Anytime" ? named("Anytime") : missing(); }
+  },
+  move: function (task, options) { log.list = options.to.name(); },
+  make: function () { throw new Error("make must not be called"); }
+};
+function contractApplication(identifier) {
+  if (identifier !== "com.culturedcode.ThingsMac") throw new Error("unexpected app id");
+  return appObj;
+}
+var __origRun = run;
+run = function (argv) {
+  var out = __origRun(argv);
+`
+	build := func(assertion string) string {
+		return base + `  ` + assertion + `
+  return out;
+};
+`
+	}
+	runMove := func(assertion string, request MoveRequest) error {
+		t.Helper()
+		var result ActionResult
+		err := RunJSON(context.Background(), ExecScript{Source: build(assertion)}, "move", request, &result)
+		if err == nil && result.Action != "move" {
+			t.Fatalf("action=%s", result.Action)
+		}
+		return err
+	}
+	runDetach := func(assertion string, request DetachRequest) error {
+		t.Helper()
+		var result ActionResult
+		err := RunJSON(context.Background(), ExecScript{Source: build(assertion)}, "detach", request, &result)
+		if err == nil && result.Action != "detach" {
+			t.Fatalf("action=%s", result.Action)
+		}
+		return err
+	}
+
+	if err := runMove(`if (log.list !== "Anytime") throw new Error("wrong list");`, MoveRequest{ID: "todo-1", List: "Anytime"}); err != nil {
+		t.Fatalf("move to list: %v", err)
+	}
+	if err := runMove(`if (log.project !== "Launch") throw new Error("wrong project");`, MoveRequest{ID: "todo-1", ProjectID: "target-1"}); err != nil {
+		t.Fatalf("move todo to project: %v", err)
+	}
+	if err := runMove(`if (log.area !== "Work") throw new Error("wrong area");`, MoveRequest{ID: "todo-1", Area: "Work"}); err != nil {
+		t.Fatalf("move todo to area: %v", err)
+	}
+	if err := runMove(`if (log.area !== "Work") throw new Error("wrong area");`, MoveRequest{ID: "proj-1", Area: "Work"}); err != nil {
+		t.Fatalf("move project to area: %v", err)
+	}
+
+	err := runMove("", MoveRequest{ID: "proj-1", Project: "Launch"})
+	if err == nil || !strings.Contains(err.Error(), "cannot be moved into another project") {
+		t.Fatalf("project-to-project error=%v", err)
+	}
+
+	if err := runDetach(`if (log.project !== null) throw new Error("project not null");`, DetachRequest{ID: "todo-1", Project: true}); err != nil {
+		t.Fatalf("detach project: %v", err)
+	}
+	if err := runDetach(`if (log.area !== null) throw new Error("area not null");`, DetachRequest{ID: "proj-1", Area: true}); err != nil {
+		t.Fatalf("detach area: %v", err)
+	}
+	if err := runDetach(`if (log.project !== null || log.area !== null) throw new Error("not all null");`, DetachRequest{ID: "todo-1", Project: true, Area: true, All: true}); err != nil {
+		t.Fatalf("detach all: %v", err)
+	}
+	if err := runDetach(`if (log.area !== null) throw new Error("project area not null");`, DetachRequest{ID: "proj-1", Project: true, Area: true, All: true}); err != nil {
+		t.Fatalf("detach all project: %v", err)
+	}
+
+	err = runDetach("", DetachRequest{ID: "proj-1", Project: true})
+	if err == nil || !strings.Contains(err.Error(), "--project detach is not valid for a project") {
+		t.Fatalf("project detach error=%v", err)
+	}
+}
+
 func TestExecScriptHealthRoundTrip(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("osascript is a macOS dependency")

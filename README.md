@@ -44,6 +44,8 @@ things-cli add --title "Task" [--notes ...] [--when today] [--deadline yyyy-mm-d
   [--list LIST-NAME|--list-id LIST-ID] [--project PROJECT|--project-id PROJECT-ID] [--wait]
 things-cli add-project --title "Project" [--to-dos $'one\ntwo'] [--area Work] [--wait]
 things-cli update <id> --title "New" --completed
+things-cli move <id> --project "Launch"
+things-cli detach <id> --project
 things-cli complete <id>
 things-cli cancel <id>
 things-cli show <id-or-list>

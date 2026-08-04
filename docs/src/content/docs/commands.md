@@ -49,6 +49,8 @@ Writes are synchronous and return the affected Things ID when successful:
 things-cli add --title "Prepare release" [options]
 things-cli add-project --title "Release" [options]
 things-cli update <id> [options]
+things-cli move <id> (--list NAME|--list-id ID|--project NAME|--project-id ID|--area NAME|--area-id ID)
+things-cli detach <id> (--project|--area|--all)
 things-cli complete <id>
 things-cli cancel <id>
 ```
@@ -57,9 +59,19 @@ Common `add` options include `--notes`, `--when`, `--deadline`, `--tags`,
 `--list`, `--list-id`, `--project`, and `--project-id`. `add-project` accepts
 `--to-dos` as newline-separated todo titles and can target an area with `--area`.
 
-`--wait` is accepted on add and add-project for compatibility. It does not poll
-storage: a successful automation response already means the operation completed.
-Do not retry a write after a timeout because the outcome may be indeterminate.
+`move` relocates an item to exactly one destination. A to-do can move to a
+built-in list, a project, or an area; a project can move to a built-in list or
+an area but never into another project. Moving directly into Upcoming is not
+supported — schedule with `update --when ...` instead.
+
+`detach` removes an item's relationships: `--project` detaches a to-do from its
+project, `--area` detaches a to-do or project from its area, and `--all` clears
+both where applicable.
+
+`--wait` is accepted on add, add-project, update, move, and detach for
+compatibility. It does not poll storage: a successful automation response
+already means the operation completed. Do not retry a write after a timeout
+because the outcome may be indeterminate.
 
 ## Navigation commands
 
