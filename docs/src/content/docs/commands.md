@@ -80,6 +80,35 @@ compatibility. It does not poll storage: a successful automation response
 already means the operation completed. Do not retry a write after a timeout
 because the outcome may be indeterminate.
 
+### Batch NDJSON
+
+Use `batch` for generated plans and shell pipelines:
+
+```sh
+things-cli batch [--input FILE|-] [--continue-on-error] [--validate-only]
+
+printf '%s\n' \
+  '{"client_id":"task-1","operation":"add","request":{"title":"Book flights","when":"today"}}' \
+  '{"client_id":"task-2","operation":"complete","request":{"id":"TODO_ID"}}' \
+  | things-cli batch
+things-cli batch --input plan.ndjson --validate-only
+```
+
+Input is newline-delimited JSON; blank lines are ignored. Supported operations
+are `add`, `add-project`, `update`, `complete`, and `cancel`. Each operation is
+validated and then executed sequentially, never concurrently or automatically
+retried. Results are compact NDJSON objects containing `index`, optional
+`client_id`, `ok`, and either `data` or an `{code, message}` error. The default
+stops after the first failure; `--continue-on-error` emits the failure and
+continues, but still exits non-zero if any operation fails. Syntax/schema
+failures exit 2, while Things/runtime failures exit 1.
+
+`--validate-only` validates the complete stream without calling Things and
+emits normalized requests. `--human` is intentionally unsupported for this
+stream protocol. Lines are limited to 1 MiB and streams to 1,000 operations.
+A timeout or process failure can leave a write's outcome indeterminate; batch
+never retries it.
+
 ## Navigation commands
 
 ```sh
