@@ -195,6 +195,22 @@ func (c *AutomationClient) Detach(ctx context.Context, request DetachRequest) (A
 	return result, nil
 }
 
+func (c *AutomationClient) Delete(ctx context.Context, id string) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "delete", idRequest{ID: id}, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) EmptyTrash(ctx context.Context) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "empty-trash", struct{}{}, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
 func (c *AutomationClient) Complete(ctx context.Context, id string) (ActionResult, error) {
 	var result ActionResult
 	if err := c.run(ctx, "complete", idRequest{ID: id}, &result); err != nil {

@@ -641,6 +641,15 @@ function showTarget(app, target) {
     item.show();
     return { action: "show", id: target };
   }
+  // Built-in list aliases use stable list IDs, so they also work when Things
+  // is localized (for example, `trash` instead of the translated list name).
+  var alias = text(target).toLowerCase();
+  if (listDefinition(alias)) {
+    var nativeList = resolveList(app, alias);
+    if (!nativeList) throw new Error("Things list not found: " + alias);
+    nativeList.show();
+    return { action: "show", id: target };
+  }
   var list = resolveListTarget(app, target, target);
   list.show();
   return { action: "show", id: target };
@@ -682,6 +691,23 @@ function moveItem(app, request) {
     return actionResult("move", task);
   }
   throw new Error("no destination supplied");
+}
+
+function deleteItem(app, request) {
+  var task = findItem(app, request.id);
+  if (!task) throw new Error("item not found: " + request.id);
+  var id = objectID(task);
+  // Things' public delete command moves a task or project, including its
+  // children, to Trash. Do not emulate this through private storage APIs.
+  app.delete(task);
+  return { action: "delete", id: id };
+}
+
+function emptyTrash(app) {
+  // This is intentionally a separate operation: unlike delete, it cannot be
+  // undone through Things' Trash list.
+  app.emptyTrash();
+  return { action: "empty-trash" };
 }
 
 function detachItem(app, request) {
@@ -762,6 +788,8 @@ function dispatch(operation, request) {
   if (operation === "update") return updateTask(app, request);
   if (operation === "move") return moveItem(app, request);
   if (operation === "detach") return detachItem(app, request);
+  if (operation === "delete") return deleteItem(app, request);
+  if (operation === "empty-trash") return emptyTrash(app);
   if (operation === "complete") {
     var completeTask = findItem(app, request.id);
     if (!completeTask) throw new Error("item not found: " + request.id);

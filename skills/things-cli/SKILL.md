@@ -1,6 +1,6 @@
 ---
 name: things-cli
-description: Use the things-cli command-line tool to read and manipulate Things 3 tasks/projects on macOS. Use when the user asks to inspect Things lists/tasks, query by status/type/tag/area/project, list areas/tags/projects, add or update tasks/projects, complete/cancel tasks, or open Things UI from the shell.
+description: Use the things-cli command-line tool to read and manipulate Things 3 tasks/projects on macOS. Use when the user asks to inspect Things lists/tasks, query by status/type/tag/area/project, list areas/tags/projects, add or update tasks/projects, complete/cancel/delete tasks, empty Trash, or open Things UI from the shell.
 ---
 
 # Things CLI
@@ -117,6 +117,18 @@ things-cli detach <id> (--project|--area|--all) [--wait]
 
 `--project` detaches a to-do from its project; `--area` detaches a to-do or
 project from its area; `--all` clears both where applicable.
+
+Destructive commands require extra care:
+
+```bash
+things-cli delete <id> [--reveal]
+things-cli empty-trash --yes
+```
+
+`delete` moves a to-do or project to Things Trash, including project children.
+`empty-trash --yes` is irreversible and permanently removes everything in
+Trash. Both are synchronous writes; never retry after a timeout because the
+outcome may be indeterminate.
 
 Other status/navigation commands are:
 

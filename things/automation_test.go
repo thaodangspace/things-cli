@@ -388,6 +388,97 @@ run = function (argv) {
 	}
 }
 
+func TestExecScriptDeleteAndEmptyTrashContract(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("osascript is a macOS dependency")
+	}
+
+	const applicationLine = `var app = Application("com.culturedcode.ThingsMac");`
+	if count := strings.Count(defaultAutomationScript, applicationLine); count != 1 {
+		t.Fatalf("Things application construction count=%d, want 1", count)
+	}
+	source := strings.Replace(defaultAutomationScript, applicationLine,
+		`var app = contractApplication("com.culturedcode.ThingsMac");`, 1) + `
+var deleteCalls = [];
+var emptyTrashCalls = 0;
+var todoObj = {
+  id: function () { return "todo-1"; },
+  exists: function () { return true; }
+};
+var projectObj = {
+  id: function () { return "project-1"; },
+  exists: function () { return true; }
+};
+function missingObject() {
+  return { exists: function () { return false; } };
+}
+function contractApplication(identifier) {
+  if (identifier !== "com.culturedcode.ThingsMac") throw new Error("unexpected application: " + identifier);
+  return {
+    toDos: {
+      byId: function (id) { return id === "todo-1" ? todoObj : missingObject(); }
+    },
+    projects: {
+      byId: function (id) { return id === "project-1" ? projectObj : missingObject(); }
+    },
+    delete: function (task) { deleteCalls.push(task); },
+    emptyTrash: function () { emptyTrashCalls++; }
+  };
+}
+var originalRun = run;
+run = function (argv) {
+  var output = originalRun(argv);
+  var request = JSON.parse(argv[1]);
+  if (argv[0] === "delete" && request.id === "todo-1" &&
+      (deleteCalls.length !== 1 || deleteCalls[0] !== todoObj)) {
+    throw new Error("todo was not deleted");
+  }
+  if (argv[0] === "delete" && request.id === "project-1" &&
+      (deleteCalls.length !== 1 || deleteCalls[0] !== projectObj)) {
+    throw new Error("project was not deleted");
+  }
+  if (argv[0] === "delete" && request.id === "missing" && deleteCalls.length !== 0) {
+    throw new Error("missing item was deleted");
+  }
+  if (argv[0] === "empty-trash" && emptyTrashCalls !== 1) {
+    throw new Error("trash was not emptied exactly once");
+  }
+  return output;
+};
+`
+
+	var todoResult ActionResult
+	if err := RunJSON(context.Background(), ExecScript{Source: source}, "delete", idRequest{ID: "todo-1"}, &todoResult); err != nil {
+		t.Fatalf("delete todo: %v", err)
+	}
+	if todoResult.Action != "delete" || todoResult.ID != "todo-1" {
+		t.Fatalf("todo result=%+v", todoResult)
+	}
+
+	var projectResult ActionResult
+	if err := RunJSON(context.Background(), ExecScript{Source: source}, "delete", idRequest{ID: "project-1"}, &projectResult); err != nil {
+		t.Fatalf("delete project: %v", err)
+	}
+	if projectResult.Action != "delete" || projectResult.ID != "project-1" {
+		t.Fatalf("project result=%+v", projectResult)
+	}
+
+	var missingResult ActionResult
+	err := RunJSON(context.Background(), ExecScript{Source: source}, "delete", idRequest{ID: "missing"}, &missingResult)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing delete error=%v, want ErrNotFound", err)
+	}
+
+	var emptyResult ActionResult
+	if err := RunJSON(context.Background(), ExecScript{Source: source}, "empty-trash", struct{}{}, &emptyResult); err != nil {
+		t.Fatalf("empty trash: %v", err)
+	}
+	if emptyResult.Action != "empty-trash" || emptyResult.ID != "" {
+		t.Fatalf("empty trash result=%+v", emptyResult)
+	}
+
+}
+
 func TestExecScriptHealthRoundTrip(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("osascript is a macOS dependency")
