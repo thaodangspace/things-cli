@@ -150,6 +150,12 @@ func (fixtureService) Move(context.Context, things.MoveRequest) (things.ActionRe
 func (fixtureService) Detach(context.Context, things.DetachRequest) (things.ActionResult, error) {
 	return things.ActionResult{Action: "detach", ID: "todo-today"}, nil
 }
+func (fixtureService) Delete(context.Context, string) (things.ActionResult, error) {
+	return things.ActionResult{Action: "delete", ID: "todo-today"}, nil
+}
+func (fixtureService) EmptyTrash(context.Context) (things.ActionResult, error) {
+	return things.ActionResult{Action: "empty-trash"}, nil
+}
 func (fixtureService) Complete(context.Context, string) (things.ActionResult, error) {
 	return things.ActionResult{Action: "complete", ID: "todo-today"}, nil
 }
@@ -352,6 +358,9 @@ type recordingModifyService struct {
 	fixtureService
 	moveRequest   things.MoveRequest
 	detachRequest things.DetachRequest
+	deleteID      string
+	emptyTrash    int
+	showTargets   []string
 }
 
 func (s *recordingModifyService) Move(_ context.Context, request things.MoveRequest) (things.ActionResult, error) {
@@ -362,6 +371,21 @@ func (s *recordingModifyService) Move(_ context.Context, request things.MoveRequ
 func (s *recordingModifyService) Detach(_ context.Context, request things.DetachRequest) (things.ActionResult, error) {
 	s.detachRequest = request
 	return things.ActionResult{Action: "detach", ID: request.ID}, nil
+}
+
+func (s *recordingModifyService) Delete(_ context.Context, id string) (things.ActionResult, error) {
+	s.deleteID = id
+	return things.ActionResult{Action: "delete", ID: id}, nil
+}
+
+func (s *recordingModifyService) EmptyTrash(context.Context) (things.ActionResult, error) {
+	s.emptyTrash++
+	return things.ActionResult{Action: "empty-trash"}, nil
+}
+
+func (s *recordingModifyService) Show(_ context.Context, target string) (things.ActionResult, error) {
+	s.showTargets = append(s.showTargets, target)
+	return things.ActionResult{Action: "show", ID: target}, nil
 }
 
 func TestMoveCommandDestinationVariants(t *testing.T) {
@@ -439,6 +463,56 @@ func TestDetachCommandScopes(t *testing.T) {
 		if service.detachRequest != tc.want {
 			t.Fatalf("args=%v detachRequest=%+v want=%+v", tc.args, service.detachRequest, tc.want)
 		}
+	}
+}
+
+func TestDeleteAndEmptyTrashCommands(t *testing.T) {
+	oldService := thingsService
+	service := &recordingModifyService{}
+	thingsService = service
+	t.Cleanup(func() { thingsService = oldService })
+
+	root := newRootCommand()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"delete", "todo-id", "--reveal", "--human"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out.String()) != "delete todo-id" || service.deleteID != "todo-id" {
+		t.Fatalf("delete output=%q service=%+v", out.String(), service)
+	}
+	if len(service.showTargets) != 1 || service.showTargets[0] != "trash" {
+		t.Fatalf("show targets=%v", service.showTargets)
+	}
+
+	out.Reset()
+	root = newRootCommand()
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"empty-trash", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var result things.ActionResult
+	decodeData(t, out.String(), &result)
+	if result.Action != "empty-trash" || service.emptyTrash != 1 {
+		t.Fatalf("empty-trash result=%+v calls=%d", result, service.emptyTrash)
+	}
+}
+
+func TestEmptyTrashRequiresConfirmationWithoutAutomation(t *testing.T) {
+	oldService := thingsService
+	service := &recordingModifyService{}
+	thingsService = service
+	t.Cleanup(func() { thingsService = oldService })
+	_, err := runCLI(t, "empty-trash")
+	if exitCodeFor(err) != exitUsage {
+		t.Fatalf("exit=%d err=%v", exitCodeFor(err), err)
+	}
+	if service.emptyTrash != 0 {
+		t.Fatalf("empty-trash automation calls=%d", service.emptyTrash)
 	}
 }
 

@@ -89,6 +89,8 @@ type Service interface {
 	Update(ctx context.Context, request UpdateRequest) (ActionResult, error)
 	Move(ctx context.Context, request MoveRequest) (ActionResult, error)
 	Detach(ctx context.Context, request DetachRequest) (ActionResult, error)
+	Delete(ctx context.Context, id string) (ActionResult, error)
+	EmptyTrash(ctx context.Context) (ActionResult, error)
 	Complete(ctx context.Context, id string) (ActionResult, error)
 	Cancel(ctx context.Context, id string) (ActionResult, error)
 	Show(ctx context.Context, target string) (ActionResult, error)

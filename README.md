@@ -46,13 +46,17 @@ things-cli add-project --title "Project" [--to-dos $'one\ntwo'] [--area Work] [-
 things-cli update <id> --title "New" --completed
 things-cli move <id> --project "Launch"
 things-cli detach <id> --project
+things-cli delete <id> [--reveal]
+things-cli empty-trash --yes
 things-cli complete <id>
 things-cli cancel <id>
 things-cli show <id-or-list>
 things-cli search "query"
 ```
 
-`--wait` remains accepted for compatibility but does not poll storage; a successful automation response already means the operation completed. The following database-dependent options are intentionally unsupported: checklist items, headings, and the `evening` schedule value. The JSON read shape keeps `heading: null` and `checklist: []` because those fields are not exposed by Things' public scripting dictionary.
+`delete` moves a todo or project to Things Trash; deleting a project also moves its children to Trash. `empty-trash` irreversibly deletes everything in Trash and requires the explicit `--yes` confirmation. `--reveal` on `delete` opens the Trash list after deletion.
+
+`--wait` remains accepted for compatibility but does not poll storage; a successful automation response already means the operation completed. Do not retry a write after a timeout or process failure because the outcome may be indeterminate. The following database-dependent options are intentionally unsupported: checklist items, headings, and the `evening` schedule value. The JSON read shape keeps `heading: null` and `checklist: []` because those fields are not exposed by Things' public scripting dictionary.
 
 `search` opens Things' search UI and does not return search results. `show` reveals an item or native list.
 

@@ -4,6 +4,8 @@
   "update": {"action": "update", "id": "existing-id"},
   "move": {"action": "move", "id": "existing-id"},
   "detach": {"action": "detach", "id": "existing-id"},
+  "delete": {"action": "delete", "id": "existing-id"},
+  "empty-trash": {"action": "empty-trash"},
   "complete": {"action": "complete", "id": "existing-id"},
   "cancel": {"action": "cancel", "id": "existing-id"},
   "show": {"action": "show", "id": "today"},

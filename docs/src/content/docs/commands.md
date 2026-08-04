@@ -51,6 +51,8 @@ things-cli add-project --title "Release" [options]
 things-cli update <id> [options]
 things-cli move <id> (--list NAME|--list-id ID|--project NAME|--project-id ID|--area NAME|--area-id ID)
 things-cli detach <id> (--project|--area|--all)
+things-cli delete <id> [--reveal]
+things-cli empty-trash --yes
 things-cli complete <id>
 things-cli cancel <id>
 ```
@@ -67,6 +69,11 @@ supported — schedule with `update --when ...` instead.
 `detach` removes an item's relationships: `--project` detaches a to-do from its
 project, `--area` detaches a to-do or project from its area, and `--all` clears
 both where applicable.
+
+`delete` moves a to-do or project to Things Trash. Deleting a project also
+moves its children to Trash. Use `--reveal` to show the Trash list after a
+successful deletion. `empty-trash` irreversibly deletes all items in Trash and
+requires the explicit `--yes` confirmation.
 
 `--wait` is accepted on add, add-project, update, move, and detach for
 compatibility. It does not poll storage: a successful automation response

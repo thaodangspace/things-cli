@@ -36,3 +36,8 @@ THINGS_LIVE_TEST=1 go test ./things -run TestLiveReadOnlyAutomation -count=1
 ```
 
 The normal test suite uses fixtures and never mutates a live Things library.
+
+Destructive commands are also synchronous: `delete` moves an item to Trash,
+while `empty-trash --yes` permanently removes all items in Trash. A write
+that times out may have an indeterminate outcome and is never retried
+automatically.
