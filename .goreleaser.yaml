@@ -29,6 +29,9 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+sboms:
+  - artifacts: archive
+
 changelog:
   use: github
   sort: asc
@@ -38,7 +41,7 @@ changelog:
       - "^test:"
       - "^chore:"
 
-brews:
+homebrew_casks:
   - name: things-cli
     repository:
       owner: thaodangspace
@@ -47,8 +50,6 @@ brews:
     homepage: "https://github.com/thaodangspace/things-cli"
     description: "Things 3 CLI for agents and humans (JSON output by default)"
     license: "MIT"
-    directory: Formula
-    install: |
-      bin.install "things-cli"
-    test: |
-      system "#{bin}/things-cli", "--version"
+    directory: Casks
+    binaries:
+      - things-cli
