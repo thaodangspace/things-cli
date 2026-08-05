@@ -145,6 +145,7 @@ function itemRecord(task, facts, properties, includeTagIDs) {
     start_date: dateOnly(values.activationDate),
     deadline: dateOnly(values.dueDate),
     creation_date: dateTime(values.creationDate),
+    modification_date: dateTime(values.modificationDate),
     completion_date: dateTime(completion),
     area: area,
     project: project,
@@ -320,6 +321,38 @@ function listMatch(record, universe, list) {
   return !!(fact && fact.lists && fact.lists.indexOf(list) >= 0);
 }
 
+function parseQueryDate(value) {
+  if (!value) return null;
+  var raw = String(value);
+  var dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  var date;
+  if (dateOnly) {
+    date = new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]), 0, 0, 0, 0);
+  } else {
+    date = new Date(raw);
+  }
+  if (isNaN(date.getTime())) throw new Error("invalid query date: " + raw);
+  return date;
+}
+
+function timestampMatches(value, after, before) {
+  if (!after && !before) return true;
+  if (!value) return false;
+  var date = parseQueryDate(value);
+  if (after && date.getTime() < parseQueryDate(after).getTime()) return false;
+  if (before && date.getTime() > parseQueryDate(before).getTime()) return false;
+  return true;
+}
+
+function dateMatches(value, after, before) {
+  if (!after && !before) return true;
+  if (!value) return false;
+  var actual = String(value);
+  if (after && actual < String(after)) return false;
+  if (before && actual > String(before)) return false;
+  return true;
+}
+
 function matches(record, universe, request) {
   if (request.status && record.status !== request.status &&
       !(request.status === "canceled" && record.status === "cancelled")) return false;
@@ -328,6 +361,15 @@ function matches(record, universe, request) {
   if (request.tag && !tagsMatch(record, request.tag)) return false;
   if (request.area && !exactRelationMatches(record.area, request.area)) return false;
   if (request.project && !exactRelationMatches(record.project, request.project)) return false;
+  if (request.text) {
+    var needle = String(request.text).toLowerCase();
+    if (record.title.toLowerCase().indexOf(needle) < 0 &&
+        record.notes.toLowerCase().indexOf(needle) < 0) return false;
+  }
+  if (!timestampMatches(record.creation_date, request.created_after, request.created_before)) return false;
+  if (!timestampMatches(record.modification_date, request.modified_after, request.modified_before)) return false;
+  if (!dateMatches(record.deadline, request.deadline_after, request.deadline_before)) return false;
+  if (!dateMatches(record.start_date, request.start_after, request.start_before)) return false;
   if (request.list && !listMatch(record, universe, request.list)) return false;
   return true;
 }
@@ -347,7 +389,8 @@ function sortRecords(records) {
   });
 }
 
-function limited(records, limit) {
+function limited(records, limit, all) {
+  if (all === true) return records;
   var n = Number(limit);
   if (!n || n < 1) n = 50;
   return records.slice(0, n);
@@ -372,6 +415,44 @@ function listRecordsRaw(app, kind, includeTagIDs) {
 function listRecords(app, kind, limit) {
   var result = listRecordsRaw(app, kind);
   return limited(result.records.map(cleanRecord), limit);
+}
+
+function compareQueryValues(a, b) {
+  if (a === null || a === undefined || a === "") return (b === null || b === undefined || b === "") ? 0 : 1;
+  if (b === null || b === undefined || b === "") return -1;
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
+function querySortRecords(records, sort) {
+  if (!sort || sort === "native") return records;
+  var key = sort;
+  return records.sort(function (a, b) {
+    var av;
+    var bv;
+    if (key === "title") {
+      av = a.title.toLowerCase();
+      bv = b.title.toLowerCase();
+    } else if (key === "created") {
+      av = a.creation_date;
+      bv = b.creation_date;
+    } else if (key === "modified") {
+      av = a.modification_date;
+      bv = b.modification_date;
+    } else if (key === "deadline") {
+      av = a.deadline;
+      bv = b.deadline;
+    } else if (key === "start") {
+      av = a.start_date;
+      bv = b.start_date;
+    } else {
+      return 0;
+    }
+    var result = compareQueryValues(av, bv);
+    if (result !== 0) return result;
+    return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+  });
 }
 
 function findItem(app, id) {
@@ -773,13 +854,17 @@ function dispatch(operation, request) {
       var nativeRecords = nativeList.records.filter(function (record) {
         return matches(record, nativeList.universe, request);
       });
-      return limited(nativeRecords.map(cleanRecord), request.limit);
+      var nativeOrdered = querySortRecords(nativeRecords, request.sort);
+      if (request.reverse === true) nativeOrdered.reverse();
+      return limited(nativeOrdered.map(cleanRecord), request.limit, request.all);
     }
     var universe = collectUniverse(app, !!request.tag);
     var records = recordsFromUniverse(universe).filter(function (record) {
       return matches(record, universe, request);
     });
-    return limited(sortRecords(records), request.limit).map(cleanRecord);
+    var ordered = querySortRecords(records, request.sort || "title");
+    if (request.reverse === true) ordered.reverse();
+    return limited(ordered, request.limit, request.all).map(cleanRecord);
   }
   if (operation === "get") {
     var task = findItem(app, request.id);

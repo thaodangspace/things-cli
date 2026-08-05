@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -222,6 +223,104 @@ function contractApplication(identifier) {
 	if err == nil || !strings.Contains(err.Error(), "project not found: missing") {
 		t.Fatalf("error=%v, want project-not-found failure", err)
 	}
+}
+
+func TestExecScriptQueryContract(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("osascript is a macOS dependency")
+	}
+
+	const applicationLine = `var app = Application("com.culturedcode.ThingsMac");`
+	if count := strings.Count(defaultAutomationScript, applicationLine); count != 1 {
+		t.Fatalf("Things application construction count=%d, want 1", count)
+	}
+	source := strings.Replace(defaultAutomationScript, applicationLine,
+		`var app = contractApplication("com.culturedcode.ThingsMac");`, 1) + `
+function fakeTask(id, title, notes, created, modified, deadline, start) {
+  return {
+    id: function () { return id; },
+    properties: function () {
+      return {
+        pcls: "to-do",
+        status: "open",
+        name: title,
+        notes: notes,
+        creationDate: new Date(created),
+        modificationDate: modified ? new Date(modified) : null,
+        dueDate: deadline ? new Date(deadline) : null,
+        activationDate: start ? new Date(start) : null
+      };
+    },
+    tags: function () { return []; }
+  };
+}
+var alpha = fakeTask("a", "Same", "Quarterly Review", "2026-08-01T00:00:00Z", "2026-08-03T00:00:00Z", "2026-08-07T00:00:00Z", "2026-08-02T00:00:00Z");
+var beta = fakeTask("b", "same", "Other", "2026-08-01T00:00:00Z", "2026-08-01T00:00:00Z", null, null);
+var gamma = fakeTask("c", "Alpha", "quarterly REVIEW", "2026-08-02T00:00:00Z", null, "2026-08-05T00:00:00Z", "2026-08-01T00:00:00Z");
+var zeta = fakeTask("d", "Zeta", "Other", "2026-08-03T00:00:00Z", "2026-08-02T00:00:00Z", "2026-08-09T00:00:00Z", "2026-08-03T00:00:00Z");
+var topTodos = [zeta, gamma, beta, alpha];
+var inboxTodos = [alpha, zeta, gamma];
+var inboxList = {
+  id: function () { return "TMInboxListSource"; },
+  name: function () { return "Inbox"; },
+  exists: function () { return true; },
+  toDos: function () { return inboxTodos; }
+};
+function missingList() { return { exists: function () { return false; } }; }
+var lists = function () { return [inboxList]; };
+lists.byId = function (id) { return id === "TMInboxListSource" ? inboxList : missingList(); };
+lists.byName = function (name) { return name === "Inbox" ? inboxList : missingList(); };
+function contractApplication(identifier) {
+  if (identifier !== "com.culturedcode.ThingsMac") throw new Error("unexpected application: " + identifier);
+  return {
+    toDos: function () { return topTodos; },
+    projects: function () { return []; },
+    areas: function () { return []; },
+    lists: lists
+  };
+}
+`
+	client := NewAutomationClient(ExecScript{Source: source})
+	queryIDs := func(name string, filter Filter, want ...string) {
+		t.Helper()
+		items, err := client.Query(context.Background(), filter)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		got := make([]string, 0, len(items))
+		for _, item := range items {
+			got = append(got, item.ID)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s: ids=%v, want %v", name, got, want)
+		}
+	}
+
+	queryIDs("text", Filter{Text: "QUARTERLY", All: true}, "c", "a")
+	queryIDs("created inclusive", Filter{CreatedAfter: "2026-08-01T00:00:00Z", CreatedBefore: "2026-08-01T00:00:00Z", All: true}, "a", "b")
+	queryIDs("modified inclusive and null", Filter{ModifiedAfter: "2026-08-01T00:00:00Z", ModifiedBefore: "2026-08-01T00:00:00Z", All: true}, "b")
+	queryIDs("deadline inclusive and null", Filter{DeadlineAfter: "2026-08-07", DeadlineBefore: "2026-08-07", All: true}, "a")
+	queryIDs("start inclusive and null", Filter{StartAfter: "2026-08-01", StartBefore: "2026-08-01", All: true}, "c")
+	queryIDs("composed before limit", Filter{Text: "quarterly", CreatedAfter: "2026-08-02", Sort: "title", Limit: 1}, "c")
+
+	queryIDs("default limit and title order", Filter{Limit: 2}, "c", "a")
+	for _, tc := range []struct {
+		name string
+		sort string
+		want []string
+	}{
+		{"native", "native", []string{"d", "c", "b", "a"}},
+		{"title", "title", []string{"c", "a", "b", "d"}},
+		{"created", "created", []string{"a", "b", "c", "d"}},
+		{"modified", "modified", []string{"b", "d", "a", "c"}},
+		{"deadline", "deadline", []string{"c", "a", "d", "b"}},
+		{"start", "start", []string{"c", "a", "d", "b"}},
+	} {
+		queryIDs(tc.name, Filter{Sort: tc.sort, All: true}, tc.want...)
+	}
+	queryIDs("reverse final sequence", Filter{Sort: "title", Reverse: true, All: true}, "d", "b", "a", "c")
+	queryIDs("native list order", Filter{List: ListInbox, Sort: "native", All: true}, "a", "d", "c")
+	queryIDs("all", Filter{All: true}, "c", "a", "b", "d")
 }
 
 func TestExecScriptMoveDetachContract(t *testing.T) {

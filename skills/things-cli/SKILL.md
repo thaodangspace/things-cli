@@ -64,10 +64,16 @@ Query publicly reachable tasks/projects, deduplicated by Things ID:
 ```bash
 things-cli query [--status open|completed|canceled] \
   [--type to-do|project] [--tag ID-or-title] [--area ID-or-title] \
-  [--project ID-or-title] [--limit N]
+  [--project ID-or-title] [--text QUERY] \
+  [--created-after RFC3339] [--created-before RFC3339] \
+  [--modified-after RFC3339] [--modified-before RFC3339] \
+  [--deadline-after YYYY-MM-DD] [--deadline-before YYYY-MM-DD] \
+  [--start-after YYYY-MM-DD] [--start-before YYYY-MM-DD] \
+  [--sort native|title|created|modified|deadline|start] [--reverse] \
+  [--limit N | --all]
 ```
 
-`--status` also accepts `done` and `cancelled`; `--type` accepts `todo` and `task` as aliases. List metadata:
+`--status` also accepts `done` and `cancelled`; `--type` accepts `todo` and `task` as aliases. `--text` matches title and notes case-insensitively without opening the Things search UI. Date bounds are inclusive; creation/modification filters use RFC3339 (date-only values mean local midnight), while deadline/start filters use `YYYY-MM-DD`. Missing dates do not match. Results default to 50; `--all` removes the cap and cannot be combined with `--limit`. Broad `--all` queries may be slower because public automation enumerates Things items. Sorting is stable with ID tie-breaking, and `native` preserves native list order. List metadata:
 
 ```bash
 things-cli list-projects [--area ID-or-title] [--limit N]
