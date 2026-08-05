@@ -487,6 +487,131 @@ run = function (argv) {
 	}
 }
 
+func TestExecScriptTagHierarchyContract(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("osascript is a macOS dependency")
+	}
+
+	const applicationLine = `var app = Application("com.culturedcode.ThingsMac");`
+	if count := strings.Count(defaultAutomationScript, applicationLine); count != 1 {
+		t.Fatalf("Things application construction count=%d, want 1", count)
+	}
+	source := strings.Replace(defaultAutomationScript, applicationLine,
+		`var app = contractApplication("com.culturedcode.ThingsMac");`, 1) + `
+var tagLog = { parentSets: 0, relationDeletes: 0, resourceDeletes: 0 };
+var createdTag = null;
+function fakeTag(id, initialName, initialParent) {
+  var nameValue = initialName;
+  var parentValue = initialParent;
+  var object = {
+    id: function () { return id; },
+    exists: function () { return true; },
+    delete: function () { tagLog.relationDeletes++; parentValue = null; }
+  };
+  Object.defineProperty(object, "name", {
+    get: function () { return function () { return nameValue; }; },
+    set: function (value) { nameValue = String(value); }
+  });
+  Object.defineProperty(object, "parentTag", {
+    get: function () {
+      if (!parentValue) return null;
+      var target = parentValue;
+      return {
+        id: function () { return target.id(); },
+        name: function () { return target.name(); },
+        exists: function () { return true; },
+        get parentTag() { return target.parentTag; },
+        delete: function () { tagLog.relationDeletes++; parentValue = null; }
+      };
+    },
+    set: function (value) { tagLog.parentSets++; parentValue = value; }
+  });
+  return object;
+}
+var rootTag = fakeTag("tag-root", "Root", null);
+var childTag = fakeTag("tag-child", "Child", rootTag);
+var otherTag = fakeTag("tag-other", "Other", null);
+function missingTag() { return { exists: function () { return false; } }; }
+var tags = function () { return [rootTag, childTag, otherTag]; };
+tags.byId = function (id) {
+  if (id === "tag-root") return rootTag;
+  if (id === "tag-child") return childTag;
+  if (id === "tag-other") return otherTag;
+  return missingTag();
+};
+tags.byName = function (name) {
+  if (name === "Root") return rootTag;
+  if (name === "Child") return childTag;
+  if (name === "Other") return otherTag;
+  return missingTag();
+};
+function contractApplication(identifier) {
+  if (identifier !== "com.culturedcode.ThingsMac") throw new Error("unexpected application: " + identifier);
+  return {
+    tags: tags,
+    make: function (specification) {
+      if (!specification || specification.new !== "tag") throw new Error("unexpected make request");
+      createdTag = fakeTag("tag-new", specification.withProperties.name, null);
+      return createdTag;
+    },
+    delete: function (tag) {
+      if (tag !== childTag && tag !== rootTag && tag !== otherTag) throw new Error("unexpected deleted tag");
+      tagLog.resourceDeletes++;
+    }
+  };
+}
+var originalRun = run;
+run = function (argv) {
+  var output = originalRun(argv);
+  var request = JSON.parse(argv[1]);
+  if (argv[0] === "list-tags" && request.tree === true) {
+    var listData = JSON.parse(output).data;
+    if (!listData[0].parent || listData[0].id !== "tag-child" || listData[0].parent.id !== "tag-root") throw new Error("parentTag was not read");
+  }
+  var succeeded = JSON.parse(output).ok === true;
+  if (argv[0] === "tag-add" && succeeded) {
+    if (!createdTag || !createdTag.parentTag || createdTag.parentTag.id() !== "tag-root" || tagLog.parentSets !== 1) throw new Error("parentTag was not assigned on add");
+  }
+  if (argv[0] === "tag-rename" && succeeded && childTag.name() !== "Renamed") throw new Error("tag was not renamed");
+  if (argv[0] === "tag-set-parent" && succeeded && request.root !== true && (!childTag.parentTag || childTag.parentTag.id() !== "tag-other")) throw new Error("parentTag was not changed");
+  if (argv[0] === "tag-set-parent" && succeeded && request.root === true && (childTag.parentTag !== null || tagLog.relationDeletes !== 1)) throw new Error("parentTag was not cleared");
+  if (argv[0] === "tag-delete" && succeeded && tagLog.resourceDeletes !== 1) throw new Error("tag was not deleted");
+  return output;
+};
+`
+
+	var tagsResult []Tag
+	if err := RunJSON(context.Background(), ExecScript{Source: source}, "list-tags", tagListRequest{Tree: true}, &tagsResult); err != nil {
+		t.Fatalf("list tags tree: %v", err)
+	}
+	if len(tagsResult) != 3 || tagsResult[0].ID != "tag-child" || tagsResult[0].Parent == nil || tagsResult[0].Parent.ID != "tag-root" {
+		t.Fatalf("tags=%+v, want child parent", tagsResult)
+	}
+
+	var action ActionResult
+	if err := RunJSON(context.Background(), ExecScript{Source: source}, "tag-add", AddTagRequest{Title: "New", Parent: ResourceTarget{ID: "tag-root", Name: "Root"}}, &action); err != nil {
+		t.Fatalf("tag add: %v", err)
+	}
+	if action.Action != "tag-add" || action.ID != "tag-new" {
+		t.Fatalf("add result=%+v", action)
+	}
+	if err := RunJSON(context.Background(), ExecScript{Source: source}, "tag-rename", RenameTagRequest{Target: ResourceTarget{ID: "tag-child", Name: "Child"}, Title: "Renamed"}, &action); err != nil {
+		t.Fatalf("tag rename: %v", err)
+	}
+	if err := RunJSON(context.Background(), ExecScript{Source: source}, "tag-set-parent", SetTagParentRequest{Target: ResourceTarget{ID: "tag-child", Name: "Child"}, Parent: ResourceTarget{ID: "tag-other", Name: "Other"}}, &action); err != nil {
+		t.Fatalf("tag set parent: %v", err)
+	}
+	if err := RunJSON(context.Background(), ExecScript{Source: source}, "tag-set-parent", SetTagParentRequest{Target: ResourceTarget{ID: "tag-child", Name: "Child"}, Root: true}, &action); err != nil {
+		t.Fatalf("tag clear parent: %v", err)
+	}
+	if err := RunJSON(context.Background(), ExecScript{Source: source}, "tag-delete", DeleteTagRequest{Target: ResourceTarget{ID: "tag-child", Name: "Child"}}, &action); err != nil {
+		t.Fatalf("tag delete: %v", err)
+	}
+	if err := RunJSON(context.Background(), ExecScript{Source: source}, "tag-set-parent", SetTagParentRequest{Target: ResourceTarget{ID: "tag-root", Name: "Root"}, Parent: ResourceTarget{ID: "tag-child", Name: "Child"}}, &action); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("cycle error=%v", err)
+	}
+}
+
 func TestExecScriptDeleteAndEmptyTrashContract(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("osascript is a macOS dependency")

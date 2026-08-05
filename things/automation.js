@@ -500,12 +500,15 @@ function areaRecords(app) {
   return sortRecords(areas);
 }
 
-function tagRecords(app) {
+function tagRecords(app, includeParent) {
   var tags = [];
   var source = app.tags();
   for (var i = 0; i < source.length; i++) {
     var id = objectID(source[i]);
-    if (id) tags.push({ id: id, title: objectName(source[i]) });
+    if (!id) continue;
+    var record = { id: id, title: objectName(source[i]) };
+    if (includeParent === true) record.parent = relationRef(source[i], "parentTag");
+    tags.push(record);
   }
   return sortRecords(tags);
 }
@@ -589,6 +592,100 @@ function resolveAreaTarget(app, id, name) {
 
 function resolveProjectTarget(app, id, name) {
   return resolveTarget(app.projects, id, name, "project");
+}
+
+function resolveTagTarget(app, id, name) {
+  return resolveTarget(app.tags, id, name, "tag");
+}
+
+function resolveRequestTarget(app, collectionResolver, request, label) {
+  var target = request || {};
+  return collectionResolver(app, target.id || "", target.name || "");
+}
+
+function tagParentChainContains(tag, targetID) {
+  var current = tag;
+  var seen = {};
+  while (current) {
+    var id = objectID(current);
+    if (!id || seen[id]) return false;
+    if (id === targetID) return true;
+    seen[id] = true;
+    current = relationValue(current, "parentTag");
+  }
+  return false;
+}
+
+function validateTagParent(tag, parent) {
+  var tagID = objectID(tag);
+  var parentID = objectID(parent);
+  if (!tagID || !parentID) throw new Error("tag parent must have an id");
+  if (tagID === parentID) throw new Error("a tag cannot be its own parent");
+  if (tagParentChainContains(parent, tagID)) throw new Error("tag parent would create a cycle");
+}
+
+function addAreaResource(app, request) {
+  if (!request.title || !text(request.title).trim()) throw new Error("area title is required");
+  var names = (request.tags || []).slice();
+  for (var i = 0; i < names.length; i++) {
+    var tag = resolveTagTarget(app, "", names[i]);
+    names[i] = objectName(tag);
+  }
+  var area = app.make({ new: "area", withProperties: { name: request.title } });
+  if (request.tags !== undefined) area.tagNames = names.join(",");
+  return actionResult("area-add", area);
+}
+
+function renameAreaResource(app, request) {
+  var area = resolveRequestTarget(app, resolveAreaTarget, request.target, "area");
+  if (!request.title || !text(request.title).trim()) throw new Error("area title is required");
+  area.name = request.title;
+  return actionResult("area-rename", area);
+}
+
+function deleteAreaResource(app, request) {
+  var area = resolveRequestTarget(app, resolveAreaTarget, request.target, "area");
+  var id = objectID(area);
+  app.delete(area);
+  return { action: "area-delete", id: id };
+}
+
+function addTagResource(app, request) {
+  if (!request.title || !text(request.title).trim()) throw new Error("tag title is required");
+  var parent = null;
+  if (request.parent && (request.parent.id || request.parent.name)) {
+    parent = resolveRequestTarget(app, resolveTagTarget, request.parent, "tag");
+  }
+  var tag = app.make({ new: "tag", withProperties: { name: request.title } });
+  if (parent) tag.parentTag = parent;
+  return actionResult("tag-add", tag);
+}
+
+function renameTagResource(app, request) {
+  var tag = resolveRequestTarget(app, resolveTagTarget, request.target, "tag");
+  if (!request.title || !text(request.title).trim()) throw new Error("tag title is required");
+  tag.name = request.title;
+  return actionResult("tag-rename", tag);
+}
+
+function setTagParentResource(app, request) {
+  var tag = resolveRequestTarget(app, resolveTagTarget, request.target, "tag");
+  var id = objectID(tag);
+  if (request.root === true) {
+    deleteRelation(tag, "parentTag");
+  } else {
+    var parent = resolveRequestTarget(app, resolveTagTarget, request.parent, "tag");
+    validateTagParent(tag, parent);
+    tag.parentTag = parent;
+  }
+  return { action: "tag-set-parent", id: id };
+}
+
+function deleteTagResource(app, request) {
+  var tag = resolveRequestTarget(app, resolveTagTarget, request.target, "tag");
+  var id = objectID(tag);
+  app.delete(tag);
+  return { action: "tag-delete", id: id };
 }
 
 function applyWhen(app, task, value) {
@@ -873,7 +970,14 @@ function dispatch(operation, request) {
   }
   if (operation === "list-projects") return projectRecords(app, request);
   if (operation === "list-areas") return areaRecords(app);
-  if (operation === "list-tags") return tagRecords(app);
+  if (operation === "list-tags") return tagRecords(app, request.tree === true);
+  if (operation === "area-add") return addAreaResource(app, request);
+  if (operation === "area-rename") return renameAreaResource(app, request);
+  if (operation === "area-delete") return deleteAreaResource(app, request);
+  if (operation === "tag-add") return addTagResource(app, request);
+  if (operation === "tag-rename") return renameTagResource(app, request);
+  if (operation === "tag-set-parent") return setTagParentResource(app, request);
+  if (operation === "tag-delete") return deleteTagResource(app, request);
   if (operation === "add") return addTodo(app, request);
   if (operation === "add-project") return addProject(app, request);
   if (operation === "update") return updateTask(app, request);
@@ -916,7 +1020,12 @@ function run(argv) {
   } catch (error) {
     var message = text(error);
     var lower = message.toLowerCase();
-    if (message.indexOf("Error: item not found") === 0 || message.indexOf("item not found") === 0) {
+    if (message.indexOf("Error: item not found") === 0 ||
+        message.indexOf("item not found") === 0 ||
+        message.indexOf("area not found") >= 0 ||
+        message.indexOf("tag not found") >= 0 ||
+        message.indexOf("project not found") >= 0 ||
+        message.indexOf("list not found") >= 0) {
       return failure("not_found", message);
     }
     if (lower.indexOf("-1743") >= 0 || lower.indexOf("not authorized") >= 0 || lower.indexOf("not allowed") >= 0) {

@@ -91,12 +91,20 @@ func humanAreaList(items []things.Area, emptyMsg string) string {
 }
 
 func humanTagList(items []things.Tag, emptyMsg string) string {
+	return humanTagListTree(items, emptyMsg)
+}
+
+func humanTagListTree(items []things.Tag, emptyMsg string) string {
 	if len(items) == 0 {
 		return emptyMsg
 	}
 	lines := make([]string, 0, len(items))
 	for _, it := range items {
-		lines = append(lines, summarizeTag(it))
+		line := summarizeTag(it)
+		if it.Parent != nil {
+			line += " (parent: " + orUnknown(it.Parent.ID) + " " + defaultString(it.Parent.Title, "(untitled tag)") + ")"
+		}
+		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
 }
