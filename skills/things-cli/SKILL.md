@@ -25,6 +25,20 @@ If the executable is not on `PATH`, install it with:
 go install github.com/thaodangspace/things-cli/cmd/things-cli@latest
 ```
 
+## Diagnostics
+
+Run the strictly read-only environment check before troubleshooting:
+
+```bash
+things-cli doctor [--json]
+things-cli doctor --human
+```
+
+It checks macOS, the exact `/usr/bin/osascript` dependency, Things 3,
+Automation/TCC permission, the JSON protocol, and the CLI version. It reports
+all checks, does not open System Settings, and identifies the invoking process
+that needs permission.
+
 ## Read operations
 
 Native list commands preserve Things' own list membership and ordering. Each accepts `--limit N` (default 50, maximum 100):

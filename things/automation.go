@@ -122,7 +122,7 @@ func (e *AutomationError) Error() string {
 	case AutomationCanceled:
 		message = fmt.Sprintf("Things automation canceled during %s", e.Operation)
 	case AutomationPermissionDenied:
-		message = fmt.Sprintf("Things Automation permission was denied during %s; allow automation access for this terminal or application in System Settings", e.Operation)
+		message = fmt.Sprintf("Things Automation permission was denied during %s; allow access for the invoking terminal, agent host, launcher, or executable in System Settings → Privacy & Security → Automation", e.Operation)
 	case AutomationApplicationMissing:
 		message = fmt.Sprintf("Things 3 is not installed or could not be opened during %s", e.Operation)
 	case AutomationResponseFailure:
@@ -176,6 +176,9 @@ func RunJSON(ctx context.Context, runner ScriptRunner, operation string, request
 		if envelope.Error.Code == "not_found" {
 			return fmt.Errorf("%w: %s", ErrNotFound, envelope.Error.Message)
 		}
+		if kind, ok := automationFailureKind(envelope.Error.Code); ok {
+			return &AutomationError{Kind: kind, Operation: operation, Err: errors.New(envelope.Error.Message)}
+		}
 		return &AutomationError{Kind: AutomationResponseFailure, Operation: operation, Err: errors.New(envelope.Error.Message)}
 	}
 	if out == nil {
@@ -192,6 +195,19 @@ func RunJSON(ctx context.Context, runner ScriptRunner, operation string, request
 
 func responseError(operation string, err error) error {
 	return &AutomationError{Kind: AutomationResponseFailure, Operation: operation, Err: err}
+}
+
+func automationFailureKind(code string) (AutomationFailureKind, bool) {
+	switch code {
+	case "permission_denied":
+		return AutomationPermissionDenied, true
+	case "application_missing":
+		return AutomationApplicationMissing, true
+	case "timeout":
+		return AutomationTimeout, true
+	default:
+		return AutomationFailure, false
+	}
 }
 
 // AutomationHealth is a test-only response that proves argument transport and

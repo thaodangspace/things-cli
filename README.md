@@ -26,6 +26,19 @@ make build
 
 ## Commands
 
+Run the read-only environment diagnostic before troubleshooting another command:
+
+```bash
+things-cli doctor [--json]
+things-cli doctor --human
+```
+
+It checks the macOS platform, `/usr/bin/osascript`, Things availability,
+Automation/TCC permission, the JSON automation protocol, and the CLI version.
+It never changes Things data or opens System Settings. A failed check returns
+exit code 1 while still reporting every check. Grant permission to the same
+Terminal, agent host, launcher, or packaged executable that invokes the CLI.
+
 Read commands use Things' native list membership and ordering:
 
 ```bash
