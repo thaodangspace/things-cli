@@ -100,6 +100,10 @@ type Service interface {
 	Add(ctx context.Context, request AddRequest) (ActionResult, error)
 	AddProject(ctx context.Context, request AddProjectRequest) (ActionResult, error)
 	Update(ctx context.Context, request UpdateRequest) (ActionResult, error)
+	Move(ctx context.Context, request MoveRequest) (ActionResult, error)
+	Detach(ctx context.Context, request DetachRequest) (ActionResult, error)
+	Delete(ctx context.Context, id string) (ActionResult, error)
+	EmptyTrash(ctx context.Context) (ActionResult, error)
 	Complete(ctx context.Context, id string) (ActionResult, error)
 	Cancel(ctx context.Context, id string) (ActionResult, error)
 	Show(ctx context.Context, target string) (ActionResult, error)
@@ -148,4 +152,25 @@ type UpdateRequest struct {
 	Completed    *bool     `json:"completed,omitempty"`
 	Canceled     *bool     `json:"canceled,omitempty"`
 	Project      bool      `json:"project"`
+}
+
+// MoveRequest relocates an item to a built-in list, project, or area. Exactly
+// one destination group (list, project, or area) must be supplied.
+type MoveRequest struct {
+	ID        string `json:"id"`
+	List      string `json:"list,omitempty"`
+	ListID    string `json:"list_id,omitempty"`
+	Project   string `json:"project,omitempty"`
+	ProjectID string `json:"project_id,omitempty"`
+	Area      string `json:"area,omitempty"`
+	AreaID    string `json:"area_id,omitempty"`
+}
+
+// DetachRequest removes an item's project and/or area relationships. The CLI
+// expands --all into both Project and Area true.
+type DetachRequest struct {
+	ID      string `json:"id"`
+	Project bool   `json:"project"`
+	Area    bool   `json:"area"`
+	All     bool   `json:"all,omitempty"`
 }

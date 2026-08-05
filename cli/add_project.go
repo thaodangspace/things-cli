@@ -13,26 +13,17 @@ func newAddProjectCommand() *cobra.Command {
 		Use:   "add-project",
 		Short: "Add a Things project via macOS automation",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			t, err := requireFlag("title", title)
+			request, err := validateAddProjectRequest(things.AddProjectRequest{
+				Title: title, Notes: notes, When: when, Deadline: deadline,
+				Tags: splitCSV(tags), Area: area, AreaID: areaID,
+				ToDos: splitLines(todos), Reveal: reveal,
+			})
 			if err != nil {
-				return err
-			}
-			if err := validateWhen(when); err != nil {
-				return err
-			}
-			if err := validateDeadline(deadline); err != nil {
-				return err
-			}
-			toDos := splitLines(todos)
-			if err := validateCaps(t, notes, toDos); err != nil {
 				return err
 			}
 			ctx, cancel := withTimeout(cmd)
 			defer cancel()
-			res, err := currentThingsService().AddProject(ctx, things.AddProjectRequest{
-				Title: t, Notes: notes, When: when, Deadline: deadline,
-				Tags: splitCSV(tags), Area: area, AreaID: areaID, ToDos: toDos, Reveal: reveal,
-			})
+			res, err := currentThingsService().AddProject(ctx, request)
 			if err != nil {
 				return err
 			}

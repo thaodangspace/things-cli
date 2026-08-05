@@ -40,7 +40,7 @@ function objectName(object) {
 }
 
 function relationRef(object, property) {
-  var relation = callValue(object, property);
+  var relation = relationValue(object, property);
   if (!relation) return null;
   var id = objectID(relation);
   if (!id) return null;
@@ -541,52 +541,54 @@ function relativeDate(value) {
   return null;
 }
 
-function resolveListTarget(app, id, name) {
+function resolveTarget(collection, id, name, label) {
+  // IDs are stable and must win when both an ID and a name are supplied.
   if (id) {
     try {
-      var byID = app.lists.byId(id);
+      var byID = collection.byId(id);
       if (byID.exists()) return byID;
     } catch (error) {}
   }
-  if (name) {
+  if (!name) throw new Error(label + " not found: " + (id || name));
+
+  // Enumerating the public collection lets us reject duplicate names instead
+  // of allowing byName to select an arbitrary object.
+  if (typeof collection === "function") {
+    var matches = [];
+    var source;
     try {
-      var byName = app.lists.byName(name);
-      if (byName.exists()) return byName;
-    } catch (error) {}
+      source = collection();
+    } catch (error) {
+      throw new Error("unable to enumerate " + label + "s while resolving " + name);
+    }
+    for (var i = 0; i < source.length; i++) {
+      if (objectName(source[i]) === name) matches.push(source[i]);
+    }
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) throw new Error(label + " name is ambiguous: " + name);
+    throw new Error(label + " not found: " + name);
   }
-  throw new Error("list not found: " + (id || name));
+
+  // This fallback is for scripting bridges that expose a non-enumerable
+  // collection. Things exposes callable collections, so production requests
+  // take the ambiguity-safe path above.
+  try {
+    var byName = collection.byName(name);
+    if (byName.exists()) return byName;
+  } catch (error) {}
+  throw new Error(label + " not found: " + name);
+}
+
+function resolveListTarget(app, id, name) {
+  return resolveTarget(app.lists, id, name, "list");
 }
 
 function resolveAreaTarget(app, id, name) {
-  if (id) {
-    try {
-      var byID = app.areas.byId(id);
-      if (byID.exists()) return byID;
-    } catch (error) {}
-  }
-  if (name) {
-    try {
-      var byName = app.areas.byName(name);
-      if (byName.exists()) return byName;
-    } catch (error) {}
-  }
-  throw new Error("area not found: " + (id || name));
+  return resolveTarget(app.areas, id, name, "area");
 }
 
 function resolveProjectTarget(app, id, name) {
-  if (id) {
-    try {
-      var byID = app.projects.byId(id);
-      if (byID.exists()) return byID;
-    } catch (error) {}
-  }
-  if (name) {
-    try {
-      var byName = app.projects.byName(name);
-      if (byName.exists()) return byName;
-    } catch (error) {}
-  }
-  throw new Error("project not found: " + (id || name));
+  return resolveTarget(app.projects, id, name, "project");
 }
 
 function applyWhen(app, task, value) {
@@ -619,6 +621,33 @@ function applyCommonFields(app, task, request) {
 
 function actionResult(action, task) {
   return { action: action, id: objectID(task) };
+}
+
+function relationValue(object, property) {
+  try {
+    if (!object) return null;
+    var value = object[property];
+    if (typeof value === "function") value = value();
+    if (!value) return null;
+    if (typeof value.exists === "function" && !value.exists()) return null;
+    return value;
+  } catch (error) {
+    return null;
+  }
+}
+
+function hasRelation(object, property) {
+  var relation = relationValue(object, property);
+  return !!relation && !!(objectID(relation) || objectName(relation));
+}
+
+function deleteRelation(object, property) {
+  var relation = relationValue(object, property);
+  if (!relation) return;
+  if (typeof relation.delete !== "function") {
+    throw new Error("Things does not support deleting the " + property + " relationship");
+  }
+  relation.delete();
 }
 
 function addTodo(app, request) {
@@ -693,9 +722,107 @@ function showTarget(app, target) {
     item.show();
     return { action: "show", id: target };
   }
+  // Built-in list aliases use stable list IDs, so they also work when Things
+  // is localized (for example, `trash` instead of the translated list name).
+  var alias = text(target).toLowerCase();
+  if (listDefinition(alias)) {
+    var nativeList = resolveList(app, alias);
+    if (!nativeList) throw new Error("Things list not found: " + alias);
+    nativeList.show();
+    return { action: "show", id: target };
+  }
   var list = resolveListTarget(app, target, target);
   list.show();
   return { action: "show", id: target };
+}
+
+function isUpcomingListTarget(target) {
+  return objectID(target) === "TMCalendarListSource";
+}
+
+function validateMoveRequest(request) {
+  var destinations = 0;
+  if (request.list || request.list_id) destinations++;
+  if (request.project || request.project_id) destinations++;
+  if (request.area || request.area_id) destinations++;
+  if (destinations === 0) throw new Error("no destination supplied");
+  if (destinations > 1) throw new Error("move accepts exactly one destination");
+}
+
+function moveItem(app, request) {
+  validateMoveRequest(request);
+  var task = findItem(app, request.id);
+  if (!task) throw new Error("item not found: " + request.id);
+  var isProject = className(task) === "project";
+  if (request.list || request.list_id) {
+    var destination = resolveListTarget(app, request.list_id, request.list);
+    if (isUpcomingListTarget(destination)) {
+      throw new Error("moving directly to Upcoming is not supported; use update --when to schedule");
+    }
+    app.move(task, { to: destination });
+    return actionResult("move", task);
+  }
+  if (request.project || request.project_id) {
+    if (isProject) throw new Error("a project cannot be moved into another project: " + request.id);
+    task.project = resolveProjectTarget(app, request.project_id, request.project);
+    return actionResult("move", task);
+  }
+  if (request.area || request.area_id) {
+    task.area = resolveAreaTarget(app, request.area_id, request.area);
+    return actionResult("move", task);
+  }
+  throw new Error("no destination supplied");
+}
+
+function deleteItem(app, request) {
+  var task = findItem(app, request.id);
+  if (!task) throw new Error("item not found: " + request.id);
+  var id = objectID(task);
+  // Things' public delete command moves a task or project, including its
+  // children, to Trash. Do not emulate this through private storage APIs.
+  app.delete(task);
+  return { action: "delete", id: id };
+}
+
+function emptyTrash(app) {
+  // This is intentionally a separate operation: unlike delete, it cannot be
+  // undone through Things' Trash list.
+  app.emptyTrash();
+  return { action: "empty-trash" };
+}
+
+function detachItem(app, request) {
+  var all = request.all === true;
+  if (all && request.project !== request.area) {
+    throw new Error("--all must clear both project and area relationships");
+  }
+  if (!all && request.project && request.area) {
+    throw new Error("--project and --area cannot both be set; use --all to clear both");
+  }
+  if (!all && !request.project && !request.area) {
+    throw new Error("no detach scope supplied");
+  }
+  if (all) {
+    request.project = true;
+    request.area = true;
+  }
+
+  var task = findItem(app, request.id);
+  if (!task) throw new Error("item not found: " + request.id);
+  var isProject = className(task) === "project";
+  if (request.project && isProject && !all) {
+    throw new Error("--project detach is not valid for a project: " + request.id);
+  }
+  if (request.project && !isProject && !all && !hasRelation(task, "project")) {
+    throw new Error("item is not currently in a project: " + request.id);
+  }
+  if (request.area && !all && !hasRelation(task, "area")) {
+    throw new Error("item is not currently in an area: " + request.id);
+  }
+  // Projects do not have a project parent; --all still applies to their area.
+  if (request.project && !isProject) deleteRelation(task, "project");
+  if (request.area) deleteRelation(task, "area");
+  return actionResult("detach", task);
 }
 
 function encodeQuery(value) {
@@ -714,6 +841,12 @@ function searchTarget(query) {
 function dispatch(operation, request) {
   if (operation === "health") return { operation: operation, request: request };
   var app = Application("com.culturedcode.ThingsMac");
+  if (operation === "diagnose") {
+    // Reading application metadata is intentionally the smallest public
+    // operation that both resolves Things and exercises Automation/TCC.
+    var applicationName = typeof app.name === "function" ? app.name() : "Things 3";
+    return { application: text(applicationName), bundle_identifier: "com.culturedcode.ThingsMac" };
+  }
   if (operation === "list") return listRecords(app, request.list, request.limit);
   if (operation === "query") {
     if (request.list) {
@@ -744,6 +877,10 @@ function dispatch(operation, request) {
   if (operation === "add") return addTodo(app, request);
   if (operation === "add-project") return addProject(app, request);
   if (operation === "update") return updateTask(app, request);
+  if (operation === "move") return moveItem(app, request);
+  if (operation === "detach") return detachItem(app, request);
+  if (operation === "delete") return deleteItem(app, request);
+  if (operation === "empty-trash") return emptyTrash(app);
   if (operation === "complete") {
     var completeTask = findItem(app, request.id);
     if (!completeTask) throw new Error("item not found: " + request.id);
@@ -778,8 +915,15 @@ function run(argv) {
     return success(dispatch(operation, request));
   } catch (error) {
     var message = text(error);
+    var lower = message.toLowerCase();
     if (message.indexOf("Error: item not found") === 0 || message.indexOf("item not found") === 0) {
       return failure("not_found", message);
+    }
+    if (lower.indexOf("-1743") >= 0 || lower.indexOf("not authorized") >= 0 || lower.indexOf("not allowed") >= 0) {
+      return failure("permission_denied", "Automation permission was denied");
+    }
+    if (lower.indexOf("-2700") >= 0 || lower.indexOf("-1728") >= 0 || lower.indexOf("application can't be found") >= 0 || lower.indexOf("can't get application") >= 0 || lower.indexOf("cannot get application") >= 0 || lower.indexOf("application isn't running") >= 0) {
+      return failure("application_missing", "Things 3 could not be resolved");
     }
     return failure("application_error", message);
   }

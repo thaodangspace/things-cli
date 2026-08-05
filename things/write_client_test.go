@@ -16,7 +16,7 @@ func (r *actionRunner) Run(_ context.Context, operation string, request any) ([]
 	r.operations = append(r.operations, operation)
 	r.requests = append(r.requests, request)
 	id := "created-id"
-	if operation == "update" || operation == "complete" || operation == "cancel" {
+	if operation == "update" || operation == "delete" || operation == "complete" || operation == "cancel" {
 		id = "existing-id"
 	}
 	return json.Marshal(map[string]any{
@@ -42,6 +42,18 @@ func TestAutomationClientWriteRequests(t *testing.T) {
 	if got, err := client.Update(ctx, UpdateRequest{ID: "existing-id", Title: &title}); err != nil || got.ID != "existing-id" {
 		t.Fatalf("update=%+v err=%v", got, err)
 	}
+	if got, err := client.Move(ctx, MoveRequest{ID: "existing-id", Area: "Work", AreaID: "area-id"}); err != nil || got.Action != "move" {
+		t.Fatalf("move=%+v err=%v", got, err)
+	}
+	if got, err := client.Detach(ctx, DetachRequest{ID: "existing-id", Project: true, Area: true}); err != nil || got.Action != "detach" {
+		t.Fatalf("detach=%+v err=%v", got, err)
+	}
+	if got, err := client.Delete(ctx, "existing-id"); err != nil || got.Action != "delete" {
+		t.Fatalf("delete=%+v err=%v", got, err)
+	}
+	if got, err := client.EmptyTrash(ctx); err != nil || got.Action != "empty-trash" {
+		t.Fatalf("empty-trash=%+v err=%v", got, err)
+	}
 	if _, err := client.Complete(ctx, "existing-id"); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +66,7 @@ func TestAutomationClientWriteRequests(t *testing.T) {
 	if _, err := client.Search(ctx, "quotes ' and unicode sữa"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"add", "add", "add-project", "update", "complete", "cancel", "show", "search"}
+	want := []string{"add", "add", "add-project", "update", "move", "detach", "delete", "empty-trash", "complete", "cancel", "show", "search"}
 	if !reflect.DeepEqual(runner.operations, want) {
 		t.Fatalf("operations=%v want=%v", runner.operations, want)
 	}
@@ -65,5 +77,17 @@ func TestAutomationClientWriteRequests(t *testing.T) {
 	projectRequest, ok := runner.requests[1].(AddRequest)
 	if !ok || projectRequest.Project != "Project" || projectRequest.ProjectID != "project-id" {
 		t.Fatalf("project add request=%#v", runner.requests[1])
+	}
+	moveRequest, ok := runner.requests[4].(MoveRequest)
+	if !ok || moveRequest.Area != "Work" || moveRequest.AreaID != "area-id" || moveRequest.ID != "existing-id" {
+		t.Fatalf("move request=%#v", runner.requests[4])
+	}
+	deleteRequest, ok := runner.requests[6].(idRequest)
+	if !ok || deleteRequest.ID != "existing-id" {
+		t.Fatalf("delete request=%#v", runner.requests[6])
+	}
+	detachRequest, ok := runner.requests[5].(DetachRequest)
+	if !ok || !detachRequest.Project || !detachRequest.Area || detachRequest.ID != "existing-id" {
+		t.Fatalf("detach request=%#v", runner.requests[5])
 	}
 }

@@ -20,7 +20,15 @@ interpolated into JXA source.
 
 ## Permission troubleshooting
 
-Automation permission belongs to the process that invokes the CLI. If Things is
+Start with the read-only diagnostic:
+
+```sh
+things-cli doctor --human
+```
+
+It reports platform, `/usr/bin/osascript`, Things availability, Automation/TCC
+permission, protocol health, and version without exposing Things content. A
+failed report exits with status 1 but includes all checks. Automation permission belongs to the process that invokes the CLI. If Things is
 missing, permission is denied, or the response is unavailable:
 
 1. Confirm that Things 3 is installed and running if needed.
@@ -36,3 +44,8 @@ THINGS_LIVE_TEST=1 go test ./things -run TestLiveReadOnlyAutomation -count=1
 ```
 
 The normal test suite uses fixtures and never mutates a live Things library.
+
+Destructive commands are also synchronous: `delete` moves an item to Trash,
+while `empty-trash --yes` permanently removes all items in Trash. A write
+that times out may have an indeterminate outcome and is never retried
+automatically.

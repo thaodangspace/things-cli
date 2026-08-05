@@ -61,9 +61,10 @@ func newRootCommand() *cobra.Command {
 		newGetCommand(),
 		newInboxCommand(), newTodayCommand(), newUpcomingCommand(), newAnytimeCommand(), newSomedayCommand(), newLogbookCommand(), newTrashCommand(),
 		newListProjectsCommand(), newListAreasCommand(), newListTagsCommand(),
-		newAddCommand(), newAddProjectCommand(),
-		newUpdateCommand(), newCompleteCommand(), newCancelCommand(),
-		newShowCommand(), newSearchCommand(),
+		newAddCommand(), newAddProjectCommand(), newBatchCommand(),
+		newUpdateCommand(), newMoveCommand(), newDetachCommand(), newDeleteCommand(), newEmptyTrashCommand(),
+		newCompleteCommand(), newCancelCommand(),
+		newShowCommand(), newSearchCommand(), newDoctorCommand(),
 	)
 	return root
 }
@@ -74,7 +75,10 @@ func Execute() int {
 	if err == nil {
 		return exitOK
 	}
-	writeError(os.Stderr, err, opts.human)
+	var df doctorFailure
+	if !errors.As(err, &df) {
+		writeError(os.Stderr, err, opts.human)
+	}
 	return exitCodeFor(err)
 }
 

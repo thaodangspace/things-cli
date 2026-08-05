@@ -26,6 +26,19 @@ make build
 
 ## Commands
 
+Run the read-only environment diagnostic before troubleshooting another command:
+
+```bash
+things-cli doctor [--json]
+things-cli doctor --human
+```
+
+It checks the macOS platform, `/usr/bin/osascript`, Things availability,
+Automation/TCC permission, the JSON automation protocol, and the CLI version.
+It never changes Things data or opens System Settings. A failed check returns
+exit code 1 while still reporting every check. Grant permission to the same
+Terminal, agent host, launcher, or packaged executable that invokes the CLI.
+
 Read commands use Things' native list membership and ordering:
 
 ```bash
@@ -51,13 +64,20 @@ things-cli add --title "Task" [--notes ...] [--when today] [--deadline yyyy-mm-d
   [--list LIST-NAME|--list-id LIST-ID] [--project PROJECT|--project-id PROJECT-ID] [--wait]
 things-cli add-project --title "Project" [--to-dos $'one\ntwo'] [--area Work] [--wait]
 things-cli update <id> --title "New" --completed
+things-cli move <id> --project "Launch"
+things-cli detach <id> --project
+things-cli delete <id> [--reveal]
+things-cli empty-trash --yes
 things-cli complete <id>
 things-cli cancel <id>
+things-cli batch [--input FILE|-] [--continue-on-error] [--validate-only]
 things-cli show <id-or-list>
 things-cli search "query"
 ```
 
-`--wait` remains accepted for compatibility but does not poll storage; a successful automation response already means the operation completed. The following database-dependent options are intentionally unsupported: checklist items, headings, and the `evening` schedule value. The JSON read shape keeps `heading: null` and `checklist: []` because those fields are not exposed by Things' public scripting dictionary.
+`delete` moves a todo or project to Things Trash; deleting a project also moves its children to Trash. `empty-trash` irreversibly deletes everything in Trash and requires the explicit `--yes` confirmation. `--reveal` on `delete` opens the Trash list after deletion.
+
+`--wait` remains accepted for compatibility but does not poll storage; a successful automation response already means the operation completed. Do not retry a write after a timeout or process failure because the outcome may be indeterminate. The following database-dependent options are intentionally unsupported: checklist items, headings, and the `evening` schedule value. The JSON read shape keeps `heading: null` and `checklist: []` because those fields are not exposed by Things' public scripting dictionary.
 
 `search` opens Things' search UI and does not return search results. `query --text` searches title and notes in returned data without opening Things' UI. Query defaults to 50 results; `--all` intentionally removes that cap and may be slower because the public scripting API enumerates Things items. `--all` cannot be combined with `--limit`. Query sorting is stable, with ID tie-breaking; `native` preserves Things list order (or stable discovery order for universe-wide queries). `show` reveals an item or native list.
 
@@ -68,6 +88,28 @@ things-cli query --modified-after 2026-08-01T00:00:00+07:00 --all
 things-cli query --deadline-before 2026-08-07 --status open --sort deadline
 things-cli query --text "quarterly review" --type to-do
 ```
+
+## Batch NDJSON
+
+`batch` reads one JSON object per non-empty input line (stdin by default) and
+writes one compact JSON result per operation to stdout. It supports `add`,
+`add-project`, `update`, `complete`, and `cancel`:
+
+```sh
+printf '%s\n' \
+  '{"client_id":"task-1","operation":"add","request":{"title":"Book flights","when":"today"}}' \
+  '{"client_id":"task-2","operation":"complete","request":{"id":"TODO_ID"}}' \
+  | things-cli batch
+things-cli batch --input plan.ndjson --validate-only
+```
+
+Operations run sequentially and stop at the first failure by default. Use
+`--continue-on-error` for partial execution; the exit code remains non-zero if
+any operation fails. `--validate-only` reads and validates the complete stream,
+invokes no Things automation, and emits normalized requests. Blank lines are
+ignored. Each line is limited to 1 MiB and each stream to 1,000 operations.
+Batch does not support `--human`. Writes are never retried: after a timeout or
+process failure, the outcome may be indeterminate.
 
 ## Output and errors
 

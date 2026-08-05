@@ -238,6 +238,38 @@ func (c *AutomationClient) Update(ctx context.Context, request UpdateRequest) (A
 	return result, nil
 }
 
+func (c *AutomationClient) Move(ctx context.Context, request MoveRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "move", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) Detach(ctx context.Context, request DetachRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "detach", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) Delete(ctx context.Context, id string) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "delete", idRequest{ID: id}, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) EmptyTrash(ctx context.Context) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "empty-trash", struct{}{}, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
 func (c *AutomationClient) Complete(ctx context.Context, id string) (ActionResult, error) {
 	var result ActionResult
 	if err := c.run(ctx, "complete", idRequest{ID: id}, &result); err != nil {
