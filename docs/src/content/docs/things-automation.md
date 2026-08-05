@@ -20,7 +20,15 @@ interpolated into JXA source.
 
 ## Permission troubleshooting
 
-Automation permission belongs to the process that invokes the CLI. If Things is
+Start with the read-only diagnostic:
+
+```sh
+things-cli doctor --human
+```
+
+It reports platform, `/usr/bin/osascript`, Things availability, Automation/TCC
+permission, protocol health, and version without exposing Things content. A
+failed report exits with status 1 but includes all checks. Automation permission belongs to the process that invokes the CLI. If Things is
 missing, permission is denied, or the response is unavailable:
 
 1. Confirm that Things 3 is installed and running if needed.

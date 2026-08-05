@@ -9,6 +9,26 @@ Global options can be used with every command:
 - `--verbose` logs sanitized automation diagnostics to stderr; user payloads are not logged.
 - `--timeout duration` sets the operation timeout. The default is 30 seconds.
 
+## Diagnostics
+
+Use the read-only doctor command to check the host before running other
+commands:
+
+```sh
+things-cli doctor [--json]
+things-cli doctor --human
+```
+
+The report checks macOS, `/usr/bin/osascript`, Things availability,
+Automation/TCC permission, the JSON automation protocol, and the CLI version.
+It never changes Things data or opens System Settings. Failed checks return exit
+code 1 and include actionable remediation while retaining all check results. A
+healthy JSON response starts like this:
+
+```json
+{"ok":true,"data":{"healthy":true,"version":"...","checks":[{"name":"platform","status":"pass","message":"macOS arm64"}]}}
+```
+
 ## Read commands
 
 These commands use Things' native list membership and ordering:

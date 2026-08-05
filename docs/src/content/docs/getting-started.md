@@ -23,6 +23,20 @@ things-cli --help
 things-cli --version
 ```
 
+## Check the environment
+
+Run the read-only diagnostic before troubleshooting a command:
+
+```sh
+things-cli doctor --human
+```
+
+It checks the platform, the exact `/usr/bin/osascript` dependency, Things 3,
+Automation permission, the embedded JSON protocol, and the CLI version. It does
+not modify Things or open System Settings. On failure, allow the process that
+invokes the CLI (Terminal, an agent host, launcher, or packaged executable) to
+control Things under **System Settings → Privacy & Security → Automation**.
+
 ## Read a Things list
 
 Start with a read-only native list. The command returns a JSON envelope by

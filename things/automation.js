@@ -760,6 +760,12 @@ function searchTarget(query) {
 function dispatch(operation, request) {
   if (operation === "health") return { operation: operation, request: request };
   var app = Application("com.culturedcode.ThingsMac");
+  if (operation === "diagnose") {
+    // Reading application metadata is intentionally the smallest public
+    // operation that both resolves Things and exercises Automation/TCC.
+    var applicationName = typeof app.name === "function" ? app.name() : "Things 3";
+    return { application: text(applicationName), bundle_identifier: "com.culturedcode.ThingsMac" };
+  }
   if (operation === "list") return listRecords(app, request.list, request.limit);
   if (operation === "query") {
     if (request.list) {
@@ -824,8 +830,15 @@ function run(argv) {
     return success(dispatch(operation, request));
   } catch (error) {
     var message = text(error);
+    var lower = message.toLowerCase();
     if (message.indexOf("Error: item not found") === 0 || message.indexOf("item not found") === 0) {
       return failure("not_found", message);
+    }
+    if (lower.indexOf("-1743") >= 0 || lower.indexOf("not authorized") >= 0 || lower.indexOf("not allowed") >= 0) {
+      return failure("permission_denied", "Automation permission was denied");
+    }
+    if (lower.indexOf("-2700") >= 0 || lower.indexOf("-1728") >= 0 || lower.indexOf("application can't be found") >= 0 || lower.indexOf("can't get application") >= 0 || lower.indexOf("cannot get application") >= 0 || lower.indexOf("application isn't running") >= 0) {
+      return failure("application_missing", "Things 3 could not be resolved");
     }
     return failure("application_error", message);
   }
