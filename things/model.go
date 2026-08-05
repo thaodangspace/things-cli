@@ -17,22 +17,23 @@ type ChecklistItem struct {
 }
 
 type Item struct {
-	ID             string          `json:"id"`
-	Type           string          `json:"type"`
-	Status         string          `json:"status"`
-	Title          string          `json:"title"`
-	Notes          string          `json:"notes,omitempty"`
-	Start          string          `json:"start"`
-	StartDate      *string         `json:"start_date"`
-	Deadline       *string         `json:"deadline"`
-	CreationDate   *string         `json:"creation_date"`
-	CompletionDate *string         `json:"completion_date"`
-	Area           *Ref            `json:"area"`
-	Project        *Ref            `json:"project"`
-	Heading        *Ref            `json:"heading"`
-	Tags           []string        `json:"tags"`
-	Checklist      []ChecklistItem `json:"checklist"`
-	Trashed        bool            `json:"trashed"`
+	ID               string          `json:"id"`
+	Type             string          `json:"type"`
+	Status           string          `json:"status"`
+	Title            string          `json:"title"`
+	Notes            string          `json:"notes,omitempty"`
+	Start            string          `json:"start"`
+	StartDate        *string         `json:"start_date"`
+	Deadline         *string         `json:"deadline"`
+	CreationDate     *string         `json:"creation_date"`
+	ModificationDate *string         `json:"modification_date"`
+	CompletionDate   *string         `json:"completion_date"`
+	Area             *Ref            `json:"area"`
+	Project          *Ref            `json:"project"`
+	Heading          *Ref            `json:"heading"`
+	Tags             []string        `json:"tags"`
+	Checklist        []ChecklistItem `json:"checklist"`
+	Trashed          bool            `json:"trashed"`
 }
 
 type Area struct {
@@ -59,13 +60,25 @@ const (
 )
 
 type Filter struct {
-	Status  string
-	Type    string
-	Tag     string
-	Area    string
-	Project string
-	Limit   int
-	List    ListKind
+	Status         string
+	Type           string
+	Tag            string
+	Area           string
+	Project        string
+	Text           string
+	CreatedAfter   string
+	CreatedBefore  string
+	ModifiedAfter  string
+	ModifiedBefore string
+	DeadlineAfter  string
+	DeadlineBefore string
+	StartAfter     string
+	StartBefore    string
+	Sort           string
+	Reverse        bool
+	All            bool
+	Limit          int
+	List           ListKind
 }
 
 var ErrNotFound = errors.New("item not found")

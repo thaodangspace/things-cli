@@ -30,7 +30,14 @@ Read commands use Things' native list membership and ordering:
 
 ```bash
 things-cli inbox|today|upcoming|anytime|someday|logbook|trash [--limit N]
-things-cli query [--status open|completed|canceled] [--type to-do|project] [--tag TAG] [--area AREA] [--project PROJECT] [--limit N]
+things-cli query [--status open|completed|canceled] [--type to-do|project] \
+  [--tag TAG] [--area AREA] [--project PROJECT] [--text QUERY] \
+  [--created-after RFC3339] [--created-before RFC3339] \
+  [--modified-after RFC3339] [--modified-before RFC3339] \
+  [--deadline-after YYYY-MM-DD] [--deadline-before YYYY-MM-DD] \
+  [--start-after YYYY-MM-DD] [--start-before YYYY-MM-DD] \
+  [--sort native|title|created|modified|deadline|start] [--reverse] \
+  [--limit N | --all]
 things-cli get <id>
 things-cli list-projects [--area AREA] [--limit N]
 things-cli list-areas
@@ -52,7 +59,15 @@ things-cli search "query"
 
 `--wait` remains accepted for compatibility but does not poll storage; a successful automation response already means the operation completed. The following database-dependent options are intentionally unsupported: checklist items, headings, and the `evening` schedule value. The JSON read shape keeps `heading: null` and `checklist: []` because those fields are not exposed by Things' public scripting dictionary.
 
-`search` opens Things' search UI and does not return search results. `show` reveals an item or native list.
+`search` opens Things' search UI and does not return search results. `query --text` searches title and notes in returned data without opening Things' UI. Query defaults to 50 results; `--all` intentionally removes that cap and may be slower because the public scripting API enumerates Things items. `--all` cannot be combined with `--limit`. Query sorting is stable, with ID tie-breaking; `native` preserves Things list order (or stable discovery order for universe-wide queries). `show` reveals an item or native list.
+
+Examples:
+
+```sh
+things-cli query --modified-after 2026-08-01T00:00:00+07:00 --all
+things-cli query --deadline-before 2026-08-07 --status open --sort deadline
+things-cli query --text "quarterly review" --type to-do
+```
 
 ## Output and errors
 

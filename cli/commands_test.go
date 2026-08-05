@@ -200,6 +200,33 @@ func TestQueryCommand(t *testing.T) {
 	}
 }
 
+func TestQueryExtendedFlagsAndAll(t *testing.T) {
+	out, err := runCLI(t, "query", "--text", "review", "--created-after", "2026-08-01", "--modified-before", "2026-08-07T00:00:00Z", "--deadline-before", "2026-08-07", "--start-after", "2026-08-01", "--sort", "modified", "--reverse", "--all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var items []struct{ ID string }
+	decodeData(t, out, &items)
+	if len(items) != len(fixtureItems()) {
+		t.Fatalf("all query returned %d items, want %d", len(items), len(fixtureItems()))
+	}
+}
+
+func TestQueryFlagValidation(t *testing.T) {
+	for _, args := range [][]string{
+		{"query", "--text", "   "},
+		{"query", "--all", "--limit", "1"},
+		{"query", "--sort", "unknown"},
+		{"query", "--created-after", "not-a-date"},
+		{"query", "--deadline-before", "2026/08/07"},
+	} {
+		_, err := runCLI(t, args...)
+		if exitCodeFor(err) != exitUsage {
+			t.Fatalf("args=%v exit=%d err=%v", args, exitCodeFor(err), err)
+		}
+	}
+}
+
 func TestEmptyQueryJSONDataIsArray(t *testing.T) {
 	out, err := runCLI(t, "query", "--tag", "missing")
 	if err != nil {

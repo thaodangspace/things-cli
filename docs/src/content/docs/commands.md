@@ -29,7 +29,23 @@ Use general queries when you need filters across publicly reachable items:
 things-cli query \
   [--status open|completed|canceled] \
   [--type to-do|project] \
-  [--tag TAG] [--area AREA] [--project PROJECT] [--limit N]
+  [--tag TAG] [--area AREA] [--project PROJECT] [--text QUERY] \
+  [--created-after RFC3339] [--created-before RFC3339] \
+  [--modified-after RFC3339] [--modified-before RFC3339] \
+  [--deadline-after YYYY-MM-DD] [--deadline-before YYYY-MM-DD] \
+  [--start-after YYYY-MM-DD] [--start-before YYYY-MM-DD] \
+  [--sort native|title|created|modified|deadline|start] [--reverse] \
+  [--limit N | --all]
+```
+
+Query text is a case-insensitive substring match against title and notes; it returns data and does not open the Things search UI. Creation and modification bounds accept RFC3339 (or a date-only value interpreted as local midnight). Deadline and start bounds use inclusive `YYYY-MM-DD` calendar comparisons; items without the relevant date do not match. The default is 50 results. Use `--all` to intentionally remove the cap, though broad queries may be slower because the public scripting API enumerates Things items. `--all` cannot be combined with `--limit`. Sorting is stable with ID tie-breaking; `native` preserves native list order and `--reverse` reverses the final sequence.
+
+Examples:
+
+```sh
+things-cli query --modified-after 2026-08-01T00:00:00+07:00 --all
+things-cli query --deadline-before 2026-08-07 --status open --sort deadline
+things-cli query --text "quarterly review" --type to-do
 ```
 
 Look up metadata and individual items with:
