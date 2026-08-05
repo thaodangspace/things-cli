@@ -50,6 +50,7 @@ things-cli delete <id> [--reveal]
 things-cli empty-trash --yes
 things-cli complete <id>
 things-cli cancel <id>
+things-cli batch [--input FILE|-] [--continue-on-error] [--validate-only]
 things-cli show <id-or-list>
 things-cli search "query"
 ```
@@ -59,6 +60,28 @@ things-cli search "query"
 `--wait` remains accepted for compatibility but does not poll storage; a successful automation response already means the operation completed. Do not retry a write after a timeout or process failure because the outcome may be indeterminate. The following database-dependent options are intentionally unsupported: checklist items, headings, and the `evening` schedule value. The JSON read shape keeps `heading: null` and `checklist: []` because those fields are not exposed by Things' public scripting dictionary.
 
 `search` opens Things' search UI and does not return search results. `show` reveals an item or native list.
+
+## Batch NDJSON
+
+`batch` reads one JSON object per non-empty input line (stdin by default) and
+writes one compact JSON result per operation to stdout. It supports `add`,
+`add-project`, `update`, `complete`, and `cancel`:
+
+```sh
+printf '%s\n' \
+  '{"client_id":"task-1","operation":"add","request":{"title":"Book flights","when":"today"}}' \
+  '{"client_id":"task-2","operation":"complete","request":{"id":"TODO_ID"}}' \
+  | things-cli batch
+things-cli batch --input plan.ndjson --validate-only
+```
+
+Operations run sequentially and stop at the first failure by default. Use
+`--continue-on-error` for partial execution; the exit code remains non-zero if
+any operation fails. `--validate-only` reads and validates the complete stream,
+invokes no Things automation, and emits normalized requests. Blank lines are
+ignored. Each line is limited to 1 MiB and each stream to 1,000 operations.
+Batch does not support `--human`. Writes are never retried: after a timeout or
+process failure, the outcome may be indeterminate.
 
 ## Output and errors
 

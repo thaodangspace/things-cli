@@ -19,18 +19,6 @@ func newUpdateCommand() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("title") && title == "" {
-				return usageErrorf("--title may not be empty")
-			}
-			if err := validateWhen(when); err != nil {
-				return err
-			}
-			if err := validateDeadline(deadline); err != nil {
-				return err
-			}
-			if cmd.Flags().Changed("completed") && cmd.Flags().Changed("canceled") {
-				return usageErrorf("--completed and --canceled cannot both be set")
-			}
 			o := things.UpdateRequest{ID: args[0], Project: project}
 			setUpdateString(cmd, &o.Title, "title", title)
 			setUpdateString(cmd, &o.Notes, "notes", notes)
@@ -53,6 +41,11 @@ func newUpdateCommand() *cobra.Command {
 			}
 			if cmd.Flags().Changed("canceled") {
 				o.Canceled = &canceled
+			}
+			var err error
+			o, err = validateUpdateRequest(o)
+			if err != nil {
+				return err
 			}
 			ctx, cancel := withTimeout(cmd)
 			defer cancel()
