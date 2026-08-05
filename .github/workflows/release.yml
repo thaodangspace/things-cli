@@ -58,7 +58,7 @@ jobs:
           HAS_TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
         run: |
           if [[ "$HAS_TAP_GITHUB_TOKEN" != "true" ]]; then
-            echo '::error::TAP_GITHUB_TOKEN is required to publish the Homebrew formula.'
+            echo '::error::TAP_GITHUB_TOKEN is required to publish the Homebrew cask.'
             exit 1
           fi
 
