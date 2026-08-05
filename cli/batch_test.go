@@ -155,6 +155,62 @@ func TestBatchMalformedJSONIncludesLineAndUsageExit(t *testing.T) {
 	}
 }
 
+func TestBatchEnvelopeErrorsRetainClientID(t *testing.T) {
+	for _, input := range []string{
+		`{"client_id":"task-1","operation":"add","request":null}`,
+		`{"client_id":"task-2","operation":"missing","request":{}}`,
+	} {
+		output, err := runBatchTest(t, &batchProbeService{}, input+"\n", "--continue-on-error")
+		if exitCodeFor(err) != exitUsage {
+			t.Fatalf("exit=%d err=%v", exitCodeFor(err), err)
+		}
+		results := decodeBatchResults(t, output)
+		if len(results) != 1 || results[0].ClientID == nil || results[0].Error == nil {
+			t.Fatalf("results=%+v", results)
+		}
+	}
+}
+
+func TestBatchUnknownOperationAndRequestValidation(t *testing.T) {
+	input := `{"operation":"unknown","request":{}}
+{"operation":"add","request":{"title":""}}
+`
+	output, err := runBatchTest(t, &batchProbeService{}, input, "--continue-on-error")
+	if exitCodeFor(err) != exitUsage {
+		t.Fatalf("exit=%d err=%v", exitCodeFor(err), err)
+	}
+	results := decodeBatchResults(t, output)
+	if len(results) != 2 || results[0].Error == nil || results[0].Error.Code != "unknown_operation" || results[1].Error == nil || results[1].Error.Code != "invalid_request" {
+		t.Fatalf("results=%+v", results)
+	}
+}
+
+type batchTimeoutService struct {
+	fixtureService
+	calls int
+}
+
+func (s *batchTimeoutService) Complete(context.Context, string) (things.ActionResult, error) {
+	s.calls++
+	return things.ActionResult{}, &things.AutomationError{Kind: things.AutomationTimeout, Operation: "complete", Err: errors.New("deadline")}
+}
+
+func TestBatchTimeoutIsEmittedOnceWithoutRetry(t *testing.T) {
+	service := &batchTimeoutService{}
+	output, err := runBatchTest(t, service, `{"operation":"complete","request":{"id":"task"}}
+`)
+	if exitCodeFor(err) != exitRuntime {
+		t.Fatalf("exit=%d err=%v", exitCodeFor(err), err)
+	}
+	if service.calls != 1 {
+		t.Fatalf("calls=%d", service.calls)
+	}
+	want := `{"index":1,"ok":false,"error":{"code":"timeout","message":"Things automation timed out during complete: deadline"}}` + "\n"
+	if output != want {
+		t.Fatalf("output=%q want=%q", output, want)
+	}
+}
+
 func TestBatchRejectsHumanOutput(t *testing.T) {
 	_, err := runBatchTest(t, &batchProbeService{}, "", "--human")
 	if exitCodeFor(err) != exitUsage {

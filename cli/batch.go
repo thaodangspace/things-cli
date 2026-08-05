@@ -96,11 +96,7 @@ func newBatchCommand() *cobra.Command {
 }
 
 func runBatch(cmd *cobra.Command, input io.Reader, continueOnError, validateOnly bool) error {
-	scanner := bufio.NewScanner(input)
-	// Scanner's maximum includes its token buffer, so allow one extra byte and
-	// enforce the documented payload limit explicitly below.
-	scanner.Buffer(make([]byte, 64*1024), batchMaxLineBytes+1)
-
+	reader := bufio.NewReaderSize(input, 64*1024)
 	registry := batchOperationRegistry()
 	lineNumber := 0
 	operationIndex := 0
@@ -116,10 +112,23 @@ func runBatch(cmd *cobra.Command, input io.Reader, continueOnError, validateOnly
 		return emit(batchResult{Index: index, ClientID: clientID, OK: false, Error: &batchError{Code: code, Message: message}})
 	}
 
-	for scanner.Scan() {
+	for {
+		line, ok, tooLarge, readErr := readBatchLine(reader)
+		if readErr != nil {
+			operationIndex++
+			if firstRuntime == nil {
+				firstRuntime = readErr
+			}
+			if emitErr := emitError(operationIndex, nil, "input_error", readErr.Error()); emitErr != nil {
+				return emitErr
+			}
+			break
+		}
+		if !ok {
+			break
+		}
 		lineNumber++
-		line := scanner.Bytes()
-		if len(line) > batchMaxLineBytes {
+		if tooLarge {
 			operationIndex++
 			invalidInput = true
 			if err := emitError(operationIndex, nil, "line_too_large", fmt.Sprintf("line %d exceeds maximum size of %d bytes", lineNumber, batchMaxLineBytes)); err != nil {
@@ -145,7 +154,7 @@ func runBatch(cmd *cobra.Command, input io.Reader, continueOnError, validateOnly
 		entry, err := parseBatchEntry(line)
 		if err != nil {
 			invalidInput = true
-			if emitErr := emitError(operationIndex, nil, batchErrorCode(err), fmt.Sprintf("line %d: %v", lineNumber, err)); emitErr != nil {
+			if emitErr := emitError(operationIndex, entry.clientID, batchErrorCode(err), fmt.Sprintf("line %d: %v", lineNumber, err)); emitErr != nil {
 				return emitErr
 			}
 			if !validateOnly && !continueOnError {
@@ -218,22 +227,6 @@ func runBatch(cmd *cobra.Command, input io.Reader, continueOnError, validateOnly
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		operationIndex++
-		if strings.Contains(err.Error(), "token too long") {
-			invalidInput = true
-			if emitErr := emitError(operationIndex, nil, "line_too_large", fmt.Sprintf("line %d exceeds maximum size of %d bytes", lineNumber+1, batchMaxLineBytes)); emitErr != nil {
-				return emitErr
-			}
-		} else {
-			if firstRuntime == nil {
-				firstRuntime = err
-			}
-			if emitErr := emitError(operationIndex, nil, "input_error", err.Error()); emitErr != nil {
-				return emitErr
-			}
-		}
-	}
 	if invalidInput {
 		return usageErrorf("batch contains invalid input")
 	}
@@ -243,9 +236,43 @@ func runBatch(cmd *cobra.Command, input io.Reader, continueOnError, validateOnly
 	return nil
 }
 
+// readBatchLine reads one physical line while retaining only the documented
+// maximum. If the line is too large it drains the remaining fragments before
+// returning, allowing callers to continue with the next line.
+func readBatchLine(reader *bufio.Reader) (line []byte, ok, tooLarge bool, err error) {
+	var haveData bool
+	for {
+		fragment, prefix, readErr := reader.ReadLine()
+		if readErr != nil && readErr != io.EOF {
+			return nil, false, false, readErr
+		}
+		if readErr == nil {
+			haveData = true
+		}
+		if len(fragment) > 0 {
+			haveData = true
+		}
+		if !tooLarge {
+			if len(line)+len(fragment) > batchMaxLineBytes {
+				tooLarge = true
+				line = nil
+			} else {
+				line = append(line, fragment...)
+			}
+		}
+		if readErr == io.EOF || !prefix {
+			if readErr == io.EOF && !haveData {
+				return nil, false, false, nil
+			}
+			return line, true, tooLarge, nil
+		}
+	}
+}
+
 // parseBatchEntry validates the envelope and returns the raw request. Keeping
 // the request raw until the operation registry is selected gives each
-// operation one strict, typed schema.
+// operation one strict, typed schema. The client ID is parsed before later
+// envelope checks so it can still be returned with a validation error.
 func parseBatchEntry(line []byte) (batchEntry, error) {
 	var wire batchInput
 	decoder := json.NewDecoder(bytes.NewReader(line))
@@ -253,21 +280,22 @@ func parseBatchEntry(line []byte) (batchEntry, error) {
 	if err := decoder.Decode(&wire); err != nil {
 		return batchEntry{}, &batchInputError{code: "invalid_json", msg: fmt.Sprintf("malformed JSON: %v", err)}
 	}
+	clientID, err := parseBatchClientID(wire.ClientID)
+	entry := batchEntry{clientID: clientID, operation: wire.Operation, request: wire.Request}
+	if err != nil {
+		return entry, &batchInputError{code: "invalid_request", msg: err.Error()}
+	}
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
 		if err == nil {
-			return batchEntry{}, &batchInputError{code: "invalid_json", msg: "malformed JSON: multiple values on one line"}
+			return entry, &batchInputError{code: "invalid_json", msg: "malformed JSON: multiple values on one line"}
 		}
-		return batchEntry{}, &batchInputError{code: "invalid_json", msg: fmt.Sprintf("malformed JSON: %v", err)}
+		return entry, &batchInputError{code: "invalid_json", msg: fmt.Sprintf("malformed JSON: %v", err)}
 	}
 	if len(wire.Request) == 0 || bytes.Equal(bytes.TrimSpace(wire.Request), []byte("null")) {
-		return batchEntry{}, &batchInputError{code: "invalid_request", msg: "request is required and must be an object"}
+		return entry, &batchInputError{code: "invalid_request", msg: "request is required and must be an object"}
 	}
-	clientID, err := parseBatchClientID(wire.ClientID)
-	if err != nil {
-		return batchEntry{}, &batchInputError{code: "invalid_request", msg: err.Error()}
-	}
-	return batchEntry{clientID: clientID, operation: wire.Operation, request: wire.Request}, nil
+	return entry, nil
 }
 
 func parseBatchClientID(raw json.RawMessage) (*string, error) {

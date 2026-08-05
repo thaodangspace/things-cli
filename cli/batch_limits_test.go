@@ -5,6 +5,40 @@ import (
 	"testing"
 )
 
+func TestBatchOversizedLineCanBeDrained(t *testing.T) {
+	input := `{"operation":"complete","request":{"id":"task"}}` + "\n" + strings.Repeat("x", batchMaxLineBytes+1) + "\n" + `{"operation":"cancel","request":{"id":"task"}}` + "\n"
+
+	t.Run("continue on error", func(t *testing.T) {
+		service := &batchProbeService{}
+		output, err := runBatchTest(t, service, input, "--continue-on-error")
+		if exitCodeFor(err) != exitUsage {
+			t.Fatalf("exit=%d err=%v", exitCodeFor(err), err)
+		}
+		if strings.Join(service.calls, ",") != "complete,cancel" {
+			t.Fatalf("calls=%v", service.calls)
+		}
+		results := decodeBatchResults(t, output)
+		if len(results) != 3 || !results[0].OK || results[1].Error == nil || results[1].Error.Code != "line_too_large" || !results[2].OK {
+			t.Fatalf("results=%+v", results)
+		}
+	})
+
+	t.Run("validate only", func(t *testing.T) {
+		service := &batchProbeService{}
+		output, err := runBatchTest(t, service, input, "--validate-only")
+		if exitCodeFor(err) != exitUsage {
+			t.Fatalf("exit=%d err=%v", exitCodeFor(err), err)
+		}
+		if len(service.calls) != 0 {
+			t.Fatalf("calls=%v", service.calls)
+		}
+		results := decodeBatchResults(t, output)
+		if len(results) != 3 || !results[0].OK || results[1].Error == nil || results[1].Error.Code != "line_too_large" || !results[2].OK {
+			t.Fatalf("results=%+v", results)
+		}
+	})
+}
+
 func TestBatchInputLimits(t *testing.T) {
 	t.Run("line size", func(t *testing.T) {
 		output, err := runBatchTest(t, &batchProbeService{}, strings.Repeat("x", batchMaxLineBytes+1)+"\n")
