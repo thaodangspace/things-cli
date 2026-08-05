@@ -9,11 +9,15 @@ import (
 
 type diagnosticRunner struct {
 	responses  map[string][]byte
+	failures   map[string]error
 	operations []string
 }
 
 func (r *diagnosticRunner) Run(_ context.Context, operation string, _ any) ([]byte, error) {
 	r.operations = append(r.operations, operation)
+	if err, ok := r.failures[operation]; ok {
+		return nil, err
+	}
 	if response, ok := r.responses[operation]; ok {
 		return response, nil
 	}
@@ -100,6 +104,36 @@ func TestDiagnoseClassifiesApplicationAndProtocolFailures(t *testing.T) {
 	}
 	if statuses["things-app"] != DiagnosticFail || statuses["automation-protocol"] != DiagnosticFail {
 		t.Fatalf("statuses=%v", statuses)
+	}
+}
+
+func TestDiagnoseClassifiesRawMissingApplicationError(t *testing.T) {
+	runner := &diagnosticRunner{responses: map[string][]byte{
+		"health":   diagnosticResponse(`{"operation":"health","request":{"probe":"things-cli-doctor"}}`),
+		"diagnose": []byte(`{"ok":false,"error":{"code":"application_error","message":"Application can't be found (-2700)"}}`),
+	}}
+	report := Diagnose(context.Background(), runner, doctorTestEnvironment(), "dev")
+	for _, check := range report.Checks {
+		if check.Name == "things-app" {
+			if check.Status != DiagnosticFail || check.Code != "application_missing" {
+				t.Fatalf("application check=%+v", check)
+			}
+			return
+		}
+	}
+	t.Fatal("things-app check missing")
+}
+
+func TestDiagnosePreservesTimeoutCodes(t *testing.T) {
+	timeout := &AutomationError{Kind: AutomationTimeout, Operation: "doctor"}
+	runner := &diagnosticRunner{failures: map[string]error{"health": timeout, "diagnose": timeout}}
+	report := Diagnose(context.Background(), runner, doctorTestEnvironment(), "dev")
+	codes := make(map[string]string)
+	for _, check := range report.Checks {
+		codes[check.Name] = check.Code
+	}
+	if codes["automation-protocol"] != "timeout" || codes["things-app"] != "timeout" {
+		t.Fatalf("codes=%v", codes)
 	}
 }
 

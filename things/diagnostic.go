@@ -111,7 +111,7 @@ func Diagnose(ctx context.Context, runner ScriptRunner, env DoctorEnvironment, v
 		healthErr := RunJSON(ctx, runner, "health", map[string]string{"probe": "things-cli-doctor"}, &health)
 		if healthErr != nil || health.Operation != "health" || health.Request["probe"] != "things-cli-doctor" {
 			protocolCheck.Status = DiagnosticFail
-			protocolCheck.Code = "protocol_failure"
+			protocolCheck.Code = diagnosticCode(healthErr, "protocol_failure")
 			protocolCheck.Message = doctorFailureMessage("automation protocol", healthErr)
 		}
 
@@ -132,7 +132,7 @@ func Diagnose(ctx context.Context, runner ScriptRunner, env DoctorEnvironment, v
 				permissionCheck.Message = permissionRemediation
 			} else {
 				appCheck.Status = DiagnosticFail
-				appCheck.Code = "application_probe_failed"
+				appCheck.Code = diagnosticCode(err, "application_probe_failed")
 				appCheck.Message = doctorFailureMessage("Things application", err)
 				permissionCheck.Status = DiagnosticSkip
 				permissionCheck.Message = "not checked: Things application probe failed"
@@ -178,6 +178,23 @@ func status(ok bool) DiagnosticStatus {
 func isAutomationKind(err error, kind AutomationFailureKind) bool {
 	var automationErr *AutomationError
 	return errors.As(err, &automationErr) && automationErr.Kind == kind
+}
+
+func diagnosticCode(err error, fallback string) string {
+	var automationErr *AutomationError
+	if errors.As(err, &automationErr) {
+		switch automationErr.Kind {
+		case AutomationTimeout:
+			return "timeout"
+		case AutomationCanceled:
+			return "canceled"
+		case AutomationPermissionDenied:
+			return "permission_denied"
+		case AutomationApplicationMissing:
+			return "application_missing"
+		}
+	}
+	return fallback
 }
 
 func doctorFailureMessage(subject string, err error) string {

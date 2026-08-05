@@ -77,7 +77,9 @@ func (e ExecScript) Run(ctx context.Context, operation string, request any) (out
 
 func looksLikeMissingApplication(stderr string) bool {
 	lower := strings.ToLower(stderr)
-	return strings.Contains(lower, "-1728") ||
+	return strings.Contains(lower, "-2700") ||
+		strings.Contains(lower, "-1728") ||
+		strings.Contains(lower, "application can't be found") ||
 		strings.Contains(lower, "can't get application") ||
 		strings.Contains(lower, "cannot get application") ||
 		strings.Contains(lower, "application isn't running")
@@ -176,7 +178,7 @@ func RunJSON(ctx context.Context, runner ScriptRunner, operation string, request
 		if envelope.Error.Code == "not_found" {
 			return fmt.Errorf("%w: %s", ErrNotFound, envelope.Error.Message)
 		}
-		if kind, ok := automationFailureKind(envelope.Error.Code); ok {
+		if kind, ok := automationFailureKind(envelope.Error.Code, envelope.Error.Message); ok {
 			return &AutomationError{Kind: kind, Operation: operation, Err: errors.New(envelope.Error.Message)}
 		}
 		return &AutomationError{Kind: AutomationResponseFailure, Operation: operation, Err: errors.New(envelope.Error.Message)}
@@ -197,7 +199,7 @@ func responseError(operation string, err error) error {
 	return &AutomationError{Kind: AutomationResponseFailure, Operation: operation, Err: err}
 }
 
-func automationFailureKind(code string) (AutomationFailureKind, bool) {
+func automationFailureKind(code, message string) (AutomationFailureKind, bool) {
 	switch code {
 	case "permission_denied":
 		return AutomationPermissionDenied, true
@@ -205,9 +207,17 @@ func automationFailureKind(code string) (AutomationFailureKind, bool) {
 		return AutomationApplicationMissing, true
 	case "timeout":
 		return AutomationTimeout, true
-	default:
-		return AutomationFailure, false
 	}
+	// Older or customized JXA sources may still label the reply
+	// application_error. Preserve stable categories when the raw error text is
+	// an unambiguous macOS missing-application or TCC failure.
+	if looksLikePermissionFailure(message) {
+		return AutomationPermissionDenied, true
+	}
+	if looksLikeMissingApplication(message) {
+		return AutomationApplicationMissing, true
+	}
+	return AutomationFailure, false
 }
 
 // AutomationHealth is a test-only response that proves argument transport and

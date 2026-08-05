@@ -837,7 +837,7 @@ function run(argv) {
     if (lower.indexOf("-1743") >= 0 || lower.indexOf("not authorized") >= 0 || lower.indexOf("not allowed") >= 0) {
       return failure("permission_denied", "Automation permission was denied");
     }
-    if (lower.indexOf("-1728") >= 0 || lower.indexOf("can't get application") >= 0 || lower.indexOf("cannot get application") >= 0 || lower.indexOf("application isn't running") >= 0) {
+    if (lower.indexOf("-2700") >= 0 || lower.indexOf("-1728") >= 0 || lower.indexOf("application can't be found") >= 0 || lower.indexOf("can't get application") >= 0 || lower.indexOf("cannot get application") >= 0 || lower.indexOf("application isn't running") >= 0) {
       return failure("application_missing", "Things 3 could not be resolved");
     }
     return failure("application_error", message);
