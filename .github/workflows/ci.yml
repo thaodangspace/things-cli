@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go checks
+    runs-on: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          go fmt ./...
+          if ! git diff --quiet -- '*.go'; then
+            echo 'Go formatting changed tracked files:'
+            git diff -- '*.go'
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Test with race detector
+        run: go test -race ./...
+
+      - name: Build CLI
+        run: go build -trimpath ./cmd/things-cli
+
+      - name: Build release architectures
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/things-cli-build"
+          GOOS=darwin GOARCH=amd64 go build -trimpath \
+            -o "$RUNNER_TEMP/things-cli-build/things-cli-darwin-amd64" \
+            ./cmd/things-cli
+          GOOS=darwin GOARCH=arm64 go build -trimpath \
+            -o "$RUNNER_TEMP/things-cli-build/things-cli-darwin-arm64" \
+            ./cmd/things-cli
+
+  docs:
+    name: Documentation build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install documentation dependencies
+        run: npm --prefix docs ci
+
+      - name: Build documentation
+        run: npm --prefix docs run build
+
+      - name: Upload documentation artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: things-cli-docs-${{ github.run_id }}
+          path: docs/dist
+          if-no-files-found: error
+          retention-days: 3
