@@ -43,6 +43,10 @@ type idRequest struct {
 	ID string `json:"id"`
 }
 
+type tagListRequest struct {
+	Tree bool `json:"tree"`
+}
+
 func (c *AutomationClient) run(ctx context.Context, operation string, request any, out any) error {
 	return RunJSON(ctx, c.runner, operation, request, out)
 }
@@ -128,8 +132,16 @@ func (c *AutomationClient) ListAreas(ctx context.Context) ([]Area, error) {
 }
 
 func (c *AutomationClient) ListTags(ctx context.Context) ([]Tag, error) {
+	return c.listTags(ctx, false)
+}
+
+func (c *AutomationClient) ListTagsTree(ctx context.Context) ([]Tag, error) {
+	return c.listTags(ctx, true)
+}
+
+func (c *AutomationClient) listTags(ctx context.Context, tree bool) ([]Tag, error) {
 	var tags []Tag
-	if err := c.run(ctx, "list-tags", struct{}{}, &tags); err != nil {
+	if err := c.run(ctx, "list-tags", tagListRequest{Tree: tree}, &tags); err != nil {
 		return nil, err
 	}
 	if tags == nil {
@@ -247,4 +259,61 @@ func (c *AutomationClient) Search(ctx context.Context, query string) (ActionResu
 	return result, nil
 }
 
+func (c *AutomationClient) AddArea(ctx context.Context, request AddAreaRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "area-add", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) RenameArea(ctx context.Context, request RenameAreaRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "area-rename", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) DeleteArea(ctx context.Context, request DeleteAreaRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "area-delete", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) AddTag(ctx context.Context, request AddTagRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "tag-add", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) RenameTag(ctx context.Context, request RenameTagRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "tag-rename", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) SetTagParent(ctx context.Context, request SetTagParentRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "tag-set-parent", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) DeleteTag(ctx context.Context, request DeleteTagRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "tag-delete", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
 var _ Service = (*AutomationClient)(nil)
+var _ AreaTagService = (*AutomationClient)(nil)

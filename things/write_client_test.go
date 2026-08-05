@@ -25,6 +25,44 @@ func (r *actionRunner) Run(_ context.Context, operation string, request any) ([]
 	})
 }
 
+func TestAutomationClientAreaTagRequests(t *testing.T) {
+	runner := &actionRunner{}
+	client := NewAutomationClient(runner)
+	ctx := context.Background()
+	if _, err := client.AddArea(ctx, AddAreaRequest{Title: "Work", Tags: []string{"home"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RenameArea(ctx, RenameAreaRequest{Target: ResourceTarget{ID: "area-1", Name: "Work"}, Title: "Home"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.DeleteArea(ctx, DeleteAreaRequest{Target: ResourceTarget{ID: "area-1", Name: "Home"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.AddTag(ctx, AddTagRequest{Title: "Child", Parent: ResourceTarget{ID: "tag-root", Name: "Root"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RenameTag(ctx, RenameTagRequest{Target: ResourceTarget{ID: "tag-1", Name: "Child"}, Title: "Subtask"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SetTagParent(ctx, SetTagParentRequest{Target: ResourceTarget{ID: "tag-1", Name: "Subtask"}, Root: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.DeleteTag(ctx, DeleteTagRequest{Target: ResourceTarget{ID: "tag-1", Name: "Subtask"}}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(runner.operations, []string{"area-add", "area-rename", "area-delete", "tag-add", "tag-rename", "tag-set-parent", "tag-delete"}) {
+		t.Fatalf("operations=%v", runner.operations)
+	}
+	areaRequest, ok := runner.requests[0].(AddAreaRequest)
+	if !ok || areaRequest.Title != "Work" || !reflect.DeepEqual(areaRequest.Tags, []string{"home"}) {
+		t.Fatalf("area request=%#v", runner.requests[0])
+	}
+	tagRequest, ok := runner.requests[3].(AddTagRequest)
+	if !ok || tagRequest.Parent.ID != "tag-root" {
+		t.Fatalf("tag request=%#v", runner.requests[3])
+	}
+}
+
 func TestAutomationClientWriteRequests(t *testing.T) {
 	runner := &actionRunner{}
 	client := NewAutomationClient(runner)

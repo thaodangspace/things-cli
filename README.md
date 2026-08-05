@@ -48,6 +48,8 @@ things-cli get <id>
 things-cli list-projects [--area AREA] [--limit N]
 things-cli list-areas
 things-cli list-tags
+things-cli area list
+things-cli tag list [--tree]
 ```
 
 Automation writes are synchronous and return the affected Things ID:
@@ -60,6 +62,13 @@ things-cli update <id> --title "New" --completed
 things-cli move <id> --project "Launch"
 things-cli detach <id> --project
 things-cli delete <id> [--reveal]
+things-cli area add --title NAME [--tags TAG1,TAG2]
+things-cli area rename <id-or-name> --title NEW_NAME
+things-cli area delete <id-or-name> --yes
+things-cli tag add --title NAME [--parent ID_OR_NAME]
+things-cli tag rename <id-or-name> --title NEW_NAME
+things-cli tag set-parent <id-or-name> (--parent ID_OR_NAME | --root)
+things-cli tag delete <id-or-name> --yes
 things-cli empty-trash --yes
 things-cli complete <id>
 things-cli cancel <id>
@@ -68,7 +77,7 @@ things-cli show <id-or-list>
 things-cli search "query"
 ```
 
-`delete` moves a todo or project to Things Trash; deleting a project also moves its children to Trash. `empty-trash` irreversibly deletes everything in Trash and requires the explicit `--yes` confirmation. `--reveal` on `delete` opens the Trash list after deletion.
+`delete` moves a todo or project to Things Trash; deleting a project also moves its children to Trash. `area delete` moves the area's children to Trash, while `tag delete` removes the tag wherever it is used. Both require `--yes`. Area tags must already exist. `empty-trash` irreversibly deletes everything in Trash and requires the explicit `--yes` confirmation. `--reveal` on `delete` opens the Trash list after deletion.
 
 `--wait` remains accepted for compatibility but does not poll storage; a successful automation response already means the operation completed. Do not retry a write after a timeout or process failure because the outcome may be indeterminate. The following database-dependent options are intentionally unsupported: checklist items, headings, and the `evening` schedule value. The JSON read shape keeps `heading: null` and `checklist: []` because those fields are not exposed by Things' public scripting dictionary.
 

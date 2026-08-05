@@ -41,8 +41,48 @@ type Area struct {
 }
 
 type Tag struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Parent *Ref   `json:"parent,omitempty"`
+}
+
+type ResourceTarget struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+
+type AddAreaRequest struct {
+	Title string   `json:"title"`
+	Tags  []string `json:"tags,omitempty"`
+}
+
+type RenameAreaRequest struct {
+	Target ResourceTarget `json:"target"`
+	Title  string         `json:"title"`
+}
+
+type DeleteAreaRequest struct {
+	Target ResourceTarget `json:"target"`
+}
+
+type AddTagRequest struct {
+	Title  string         `json:"title"`
+	Parent ResourceTarget `json:"parent,omitempty"`
+}
+
+type RenameTagRequest struct {
+	Target ResourceTarget `json:"target"`
+	Title  string         `json:"title"`
+}
+
+type SetTagParentRequest struct {
+	Target ResourceTarget `json:"target"`
+	Parent ResourceTarget `json:"parent,omitempty"`
+	Root   bool           `json:"root,omitempty"`
+}
+
+type DeleteTagRequest struct {
+	Target ResourceTarget `json:"target"`
 }
 
 type ListKind string
@@ -95,6 +135,21 @@ type Service interface {
 	Cancel(ctx context.Context, id string) (ActionResult, error)
 	Show(ctx context.Context, target string) (ActionResult, error)
 	Search(ctx context.Context, query string) (ActionResult, error)
+}
+
+// AreaTagService contains the resource-management operations added after the
+// original Service contract. Keeping it separate preserves compatibility with
+// integrations that only implement the original read/write surface.
+type AreaTagService interface {
+	Service
+	ListTagsTree(ctx context.Context) ([]Tag, error)
+	AddArea(ctx context.Context, request AddAreaRequest) (ActionResult, error)
+	RenameArea(ctx context.Context, request RenameAreaRequest) (ActionResult, error)
+	DeleteArea(ctx context.Context, request DeleteAreaRequest) (ActionResult, error)
+	AddTag(ctx context.Context, request AddTagRequest) (ActionResult, error)
+	RenameTag(ctx context.Context, request RenameTagRequest) (ActionResult, error)
+	SetTagParent(ctx context.Context, request SetTagParentRequest) (ActionResult, error)
+	DeleteTag(ctx context.Context, request DeleteTagRequest) (ActionResult, error)
 }
 
 type AddRequest struct {

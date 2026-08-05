@@ -59,6 +59,8 @@ things-cli get <id>
 things-cli list-projects [--area AREA] [--limit N]
 things-cli list-areas
 things-cli list-tags
+things-cli area list
+things-cli tag list [--tree]
 ```
 
 ## Write commands
@@ -72,6 +74,13 @@ things-cli update <id> [options]
 things-cli move <id> (--list NAME|--list-id ID|--project NAME|--project-id ID|--area NAME|--area-id ID)
 things-cli detach <id> (--project|--area|--all)
 things-cli delete <id> [--reveal]
+things-cli area add --title NAME [--tags TAG1,TAG2]
+things-cli area rename <id-or-name> --title NEW_NAME
+things-cli area delete <id-or-name> --yes
+things-cli tag add --title NAME [--parent ID_OR_NAME]
+things-cli tag rename <id-or-name> --title NEW_NAME
+things-cli tag set-parent <id-or-name> (--parent ID_OR_NAME | --root)
+things-cli tag delete <id-or-name> --yes
 things-cli empty-trash --yes
 things-cli complete <id>
 things-cli cancel <id>
@@ -92,8 +101,10 @@ both where applicable.
 
 `delete` moves a to-do or project to Things Trash. Deleting a project also
 moves its children to Trash. Use `--reveal` to show the Trash list after a
-successful deletion. `empty-trash` irreversibly deletes all items in Trash and
-requires the explicit `--yes` confirmation.
+successful deletion. `area delete` moves the area's children to Trash, while
+`tag delete` removes the tag wherever it is used; both require `--yes`. Area
+`--tags` values must refer to existing tags. `empty-trash` irreversibly deletes
+all items in Trash and requires the explicit `--yes` confirmation.
 
 `--wait` is accepted on add, add-project, update, move, and detach for
 compatibility. It does not poll storage: a successful automation response
