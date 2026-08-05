@@ -426,7 +426,7 @@ function tagRecords(app, includeParent) {
     var id = objectID(source[i]);
     if (!id) continue;
     var record = { id: id, title: objectName(source[i]) };
-    if (includeParent === true) record.parent = relationRef(source[i], "parent");
+    if (includeParent === true) record.parent = relationRef(source[i], "parentTag");
     tags.push(record);
   }
   return sortRecords(tags);
@@ -530,7 +530,7 @@ function tagParentChainContains(tag, targetID) {
     if (!id || seen[id]) return false;
     if (id === targetID) return true;
     seen[id] = true;
-    current = relationValue(current, "parent");
+    current = relationValue(current, "parentTag");
   }
   return false;
 }
@@ -576,7 +576,7 @@ function addTagResource(app, request) {
     parent = resolveRequestTarget(app, resolveTagTarget, request.parent, "tag");
   }
   var tag = app.make({ new: "tag", withProperties: { name: request.title } });
-  if (parent) tag.parent = parent;
+  if (parent) tag.parentTag = parent;
   return actionResult("tag-add", tag);
 }
 
@@ -591,11 +591,11 @@ function setTagParentResource(app, request) {
   var tag = resolveRequestTarget(app, resolveTagTarget, request.target, "tag");
   var id = objectID(tag);
   if (request.root === true) {
-    deleteRelation(tag, "parent");
+    deleteRelation(tag, "parentTag");
   } else {
     var parent = resolveRequestTarget(app, resolveTagTarget, request.parent, "tag");
     validateTagParent(tag, parent);
-    tag.parent = parent;
+    tag.parentTag = parent;
   }
   return { action: "tag-set-parent", id: id };
 }
