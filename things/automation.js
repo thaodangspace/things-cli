@@ -747,6 +747,16 @@ function deleteRelation(object, property) {
   relation.delete();
 }
 
+// Things' JXA `make({ new: "to do" })` throws "Can't make class" on some
+// macOS/Things builds (the two-word "to do" class does not resolve), so build
+// the ToDo object and push it into a container instead -- the form Things
+// reliably accepts. `container` is a project or one of app.lists (e.g. Inbox).
+function newTodo(app, container, title) {
+  var task = app.ToDo({ name: title });
+  container.toDos.push(task);
+  return task;
+}
+
 function addTodo(app, request) {
   if (request.completed && request.canceled) throw new Error("completed and canceled cannot both be true");
   if ((request.list || request.list_id) && (request.project || request.project_id)) {
@@ -756,10 +766,9 @@ function addTodo(app, request) {
   var task;
   if (request.project || request.project_id) {
     project = resolveProjectTarget(app, request.project_id, request.project);
-    task = app.ToDo({ name: request.title });
-    project.toDos.push(task);
+    task = newTodo(app, project, request.title);
   } else {
-    task = app.make({ new: "to do", withProperties: { name: request.title } });
+    task = newTodo(app, resolveListTarget(app, "", "Inbox"), request.title);
   }
   applyCommonFields(app, task, request);
   if (!project) applyListDestination(app, task, request);
@@ -775,12 +784,7 @@ function addProject(app, request) {
   if (request.area || request.area_id) project.area = resolveAreaTarget(app, request.area_id, request.area);
   var children = request.to_dos || [];
   for (var i = 0; i < children.length; i++) {
-    var child = app.make({ new: "to do", withProperties: { name: children[i] } });
-    try {
-      child.project = project;
-    } catch (error) {
-      app.move(child, { to: project });
-    }
+    newTodo(app, project, children[i]);
   }
   if (request.reveal) project.show();
   return actionResult("add-project", project);
