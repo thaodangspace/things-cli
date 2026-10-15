@@ -44,13 +44,14 @@ things-cli add --title "Task" [--notes ...] [--when today] [--deadline yyyy-mm-d
   [--list LIST-NAME|--list-id LIST-ID] [--project PROJECT|--project-id PROJECT-ID] [--wait]
 things-cli add-project --title "Project" [--to-dos $'one\ntwo'] [--area Work] [--wait]
 things-cli update <id> --title "New" --completed
+THINGS_AUTH_TOKEN=... things-cli update <todo-id> --heading "Working"
 things-cli complete <id>
 things-cli cancel <id>
 things-cli show <id-or-list>
 things-cli search "query"
 ```
 
-`--wait` remains accepted for compatibility but does not poll storage; a successful automation response already means the operation completed. The following database-dependent options are intentionally unsupported: checklist items, headings, and the `evening` schedule value. The JSON read shape keeps `heading: null` and `checklist: []` because those fields are not exposed by Things' public scripting dictionary.
+`--wait` remains accepted for compatibility but does not poll storage; a successful automation response already means the operation completed. The following database-dependent options are intentionally unsupported: checklist items, reading headings, and the `evening` schedule value. `update --heading NAME` is the one exception to the scripting-dictionary rule: headings are not scriptable, so it moves a todo under a heading of its project through the `things:///update` URL scheme. It needs the Things URL auth token in `THINGS_AUTH_TOKEN` (Things > Settings > General > Enable Things URLs > Manage); JXA reads it from the environment so it never appears in process arguments. The move is applied asynchronously by Things, and reads still report `heading: null`. The JSON read shape keeps `heading: null` and `checklist: []` because those fields are not exposed by Things' public scripting dictionary.
 
 `search` opens Things' search UI and does not return search results. `show` reveals an item or native list.
 

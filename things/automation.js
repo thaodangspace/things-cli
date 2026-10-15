@@ -606,6 +606,7 @@ function updateTask(app, request) {
   if (request.deadline !== undefined) task.dueDate = request.deadline ? parseDateValue(request.deadline) : null;
   if (request.when !== undefined) applyWhen(app, task, request.when);
   applyListDestination(app, task, request);
+  if (request.heading !== undefined) moveToHeading(task, request.heading);
   if (request.completed !== undefined && request.completed) task.status = "completed";
   if (request.completed !== undefined && !request.completed && text(callValue(task, "status")) === "completed") task.status = "open";
   if (request.canceled !== undefined && request.canceled) task.status = "canceled";
@@ -628,6 +629,22 @@ function encodeQuery(value) {
   return encodeURIComponent(String(value)).replace(/[!'()*]/g, function (character) {
     return "%" + character.charCodeAt(0).toString(16).toUpperCase();
   });
+}
+
+// Headings are not in Things' scripting dictionary, so a heading move goes
+// through the URL scheme, which needs the auth token. The token comes from the
+// environment rather than the JSON request so it never shows up in `ps`.
+// openLocation is fire-and-forget: Things applies the move asynchronously.
+function moveToHeading(task, heading) {
+  if (!heading) throw new Error("heading may not be empty");
+  ObjC.import("Foundation");
+  var token = $.NSProcessInfo.processInfo.environment.objectForKey("THINGS_AUTH_TOKEN");
+  token = token && !token.isNil() ? token.js : "";
+  if (!token) throw new Error("THINGS_AUTH_TOKEN is required to move a todo under a heading");
+  var current = Application.currentApplication();
+  current.includeStandardAdditions = true;
+  current.openLocation("things:///update?id=" + encodeQuery(objectID(task)) +
+    "&heading=" + encodeQuery(heading) + "&auth-token=" + encodeQuery(token));
 }
 
 function searchTarget(query) {

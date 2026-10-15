@@ -5,7 +5,7 @@ description: Use the things-cli command-line tool to read and manipulate Things 
 
 # Things CLI
 
-Use the locally installed `things-cli` executable to automate Things 3 on macOS. It invokes Things through the public scripting dictionary with `osascript -l JavaScript`; it never reads or writes Things' SQLite database and does not require an auth token.
+Use the locally installed `things-cli` executable to automate Things 3 on macOS. It invokes Things through the public scripting dictionary with `osascript -l JavaScript`; it never reads or writes Things' SQLite database and needs no auth token except for `update --heading` (see below).
 
 The invoking terminal, agent host, or executable must have Automation permission for Things 3 in **System Settings → Privacy & Security → Automation**. Missing Things, denied permission, malformed responses, application errors, and timeouts are reported as actionable errors.
 
@@ -93,7 +93,7 @@ Update a task or project. Only supplied flags are changed; explicit empty `--not
 things-cli update <id> [--title TITLE] [--notes NOTES] \
   [--prepend-notes NOTES|--append-notes NOTES] [--when SCHEDULE] \
   [--deadline YYYY-MM-DD] [--tags TAG1,TAG2] [--add-tags TAG1,TAG2] \
-  [--list LIST-NAME|--list-id LIST-ID] [--completed|--canceled] \
+  [--list LIST-NAME|--list-id LIST-ID] [--heading HEADING] [--completed|--canceled] \
   [--project] [--wait]
 ```
 
@@ -112,4 +112,6 @@ things-cli search "query"
 
 User-controlled values are passed as JSON process arguments and are never interpolated into JXA source. Do not retry a write after a timeout or process failure: the outcome may be indeterminate. The CLI does not bypass macOS Automation/TCC permissions.
 
-Checklist items, headings, and the `evening` schedule value are unsupported by the public scripting API, even though legacy-compatible flags may appear in older usage documentation.
+Checklist items, reading headings, and the `evening` schedule value are unsupported by the public scripting API, even though legacy-compatible flags may appear in older usage documentation.
+
+`update --heading NAME` is the one exception to the scripting-dictionary rule: headings are not scriptable, so it moves a todo under a heading of its project through the `things:///update` URL scheme. It needs the Things URL auth token in `THINGS_AUTH_TOKEN` (Things > Settings > General > Enable Things URLs > Manage); JXA reads it from the environment so it never appears in process arguments. The move is applied asynchronously by Things, and reads still report `heading: null`.

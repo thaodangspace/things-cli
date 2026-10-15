@@ -130,7 +130,13 @@ func (fixtureService) Add(context.Context, things.AddRequest) (things.ActionResu
 
 type recordingService struct {
 	fixtureService
-	addRequest things.AddRequest
+	addRequest    things.AddRequest
+	updateRequest things.UpdateRequest
+}
+
+func (s *recordingService) Update(_ context.Context, request things.UpdateRequest) (things.ActionResult, error) {
+	s.updateRequest = request
+	return things.ActionResult{Action: "update", ID: request.ID}, nil
 }
 
 func (s *recordingService) Add(_ context.Context, request things.AddRequest) (things.ActionResult, error) {
@@ -324,6 +330,37 @@ func TestUpdateDoesNotRequireToken(t *testing.T) {
 	}
 }
 
+func TestUpdateHeading(t *testing.T) {
+	service := &recordingService{}
+	oldService := thingsService
+	thingsService = service
+	t.Cleanup(func() { thingsService = oldService })
+	t.Setenv(authTokenEnv, "token")
+	root := newRootCommand()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"update", "todo-1", "--heading", "Needs human"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if h := service.updateRequest.Heading; h == nil || *h != "Needs human" {
+		t.Fatalf("update request=%+v", service.updateRequest)
+	}
+	if strings.Contains(out.String(), "token") {
+		t.Fatalf("output leaks the auth token: %s", out.String())
+	}
+
+	for _, args := range [][]string{
+		{"update", "todo-1", "--heading", ""},
+		{"update", "proj-1", "--project", "--heading", "Working"},
+	} {
+		if _, err := runCLI(t, args...); exitCodeFor(err) != exitUsage {
+			t.Fatalf("args=%v exit=%d err=%v", args, exitCodeFor(err), err)
+		}
+	}
+}
+
 func TestCompleteCancelShowSearch(t *testing.T) {
 	oldService := thingsService
 	thingsService = fixtureService{}
@@ -343,6 +380,7 @@ func TestCompleteCancelShowSearch(t *testing.T) {
 }
 
 func TestUsageErrors(t *testing.T) {
+	t.Setenv(authTokenEnv, "")
 	_, err := runCLI(t, "query", "--limit", "0")
 	if exitCodeFor(err) != exitUsage {
 		t.Fatalf("limit exit = %d", exitCodeFor(err))

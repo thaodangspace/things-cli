@@ -132,6 +132,7 @@ type UpdateRequest struct {
 	AddTags      *[]string `json:"add_tags,omitempty"`
 	List         *string   `json:"list,omitempty"`
 	ListID       *string   `json:"list_id,omitempty"`
+	Heading      *string   `json:"heading,omitempty"`
 	Completed    *bool     `json:"completed,omitempty"`
 	Canceled     *bool     `json:"canceled,omitempty"`
 	Project      bool      `json:"project"`
