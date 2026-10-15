@@ -66,6 +66,7 @@ things-cli add --title "Task" [--notes ...] [--when today] [--deadline yyyy-mm-d
   [--list LIST-NAME|--list-id LIST-ID] [--project PROJECT|--project-id PROJECT-ID] [--wait]
 things-cli add-project --title "Project" [--to-dos $'one\ntwo'] [--area Work] [--wait]
 things-cli update <id> --title "New" --completed
+THINGS_AUTH_TOKEN=... things-cli update <todo-id> --heading "Working"
 things-cli move <id> --project "Launch"
 things-cli detach <id> --project
 things-cli delete <id> [--reveal]
@@ -86,7 +87,7 @@ things-cli search "query"
 
 `delete` moves a todo or project to Things Trash; deleting a project also moves its children to Trash. `area delete` moves the area's children to Trash, while `tag delete` removes the tag wherever it is used. Both require `--yes`. Area tags must already exist. `empty-trash` irreversibly deletes everything in Trash and requires the explicit `--yes` confirmation. `--reveal` on `delete` opens the Trash list after deletion.
 
-`--wait` remains accepted for compatibility but does not poll storage; a successful automation response already means the operation completed. Do not retry a write after a timeout or process failure because the outcome may be indeterminate. The following database-dependent options are intentionally unsupported: checklist items, headings, and the `evening` schedule value. The JSON read shape keeps `heading: null` and `checklist: []` because those fields are not exposed by Things' public scripting dictionary.
+`--wait` remains accepted for compatibility but does not poll storage; a successful automation response already means the operation completed. Do not retry a write after a timeout or process failure because the outcome may be indeterminate. The following database-dependent options are intentionally unsupported: checklist items, reading headings, and the `evening` schedule value. `update --heading NAME` moves a todo under a heading of its project through the `things:///update` URL scheme because headings are not scriptable. It needs the Things URL auth token in `THINGS_AUTH_TOKEN` (Things > Settings > General > Enable Things URLs > Manage); JXA reads it from the environment so it never appears in process arguments. The move is applied asynchronously by Things. Reads still report `heading: null` and `checklist: []` because those fields are not exposed by Things' public scripting dictionary.
 
 `search` opens Things' search UI and does not return search results. `query --text` searches title and notes in returned data without opening Things' UI. Query defaults to 50 results; `--all` intentionally removes that cap and may be slower because the public scripting API enumerates Things items. `--all` cannot be combined with `--limit`. Query sorting is stable, with ID tie-breaking; `native` preserves Things list order (or stable discovery order for universe-wide queries). `show` reveals an item or native list.
 

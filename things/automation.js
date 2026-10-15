@@ -763,17 +763,25 @@ function addTodo(app, request) {
     throw new Error("a todo cannot target both a list and a project");
   }
   var project = null;
-  var task;
   if (request.project || request.project_id) {
     project = resolveProjectTarget(app, request.project_id, request.project);
-    task = newTodo(app, project, request.title);
-  } else {
-    task = newTodo(app, resolveListTarget(app, "", "Inbox"), request.title);
   }
-  applyCommonFields(app, task, request);
-  if (!project) applyListDestination(app, task, request);
-  if (request.completed) task.status = "completed";
-  if (request.canceled) task.status = "canceled";
+  // Things 3.24+ ignores the location of `project.toDos.push(...)` / `make ... at`:
+  // the todo lands in the Inbox and the returned specifier no longer resolves.
+  // So create in the Inbox, re-resolve by id, and assign `project` afterwards.
+  var created = app.make({ new: "toDo", withProperties: { name: request.title } });
+  var task = app.toDos.byId(created.id());
+  try {
+    applyCommonFields(app, task, request);
+    if (project) task.project = project;
+    else applyListDestination(app, task, request);
+    if (request.completed) task.status = "completed";
+    if (request.canceled) task.status = "canceled";
+  } catch (error) {
+    // Never leave a half-built todo behind: callers retry failed adds.
+    try { app.delete(task); } catch (ignored) {}
+    throw error;
+  }
   if (request.reveal) task.show();
   return actionResult("add", task);
 }
@@ -784,7 +792,12 @@ function addProject(app, request) {
   if (request.area || request.area_id) project.area = resolveAreaTarget(app, request.area_id, request.area);
   var children = request.to_dos || [];
   for (var i = 0; i < children.length; i++) {
-    newTodo(app, project, children[i]);
+    var child = app.make({ new: "toDo", withProperties: { name: children[i] } });
+    try {
+      child.project = project;
+    } catch (error) {
+      app.move(child, { to: project });
+    }
   }
   if (request.reveal) project.show();
   return actionResult("add-project", project);
@@ -810,6 +823,7 @@ function updateTask(app, request) {
   if (request.deadline !== undefined) task.dueDate = request.deadline ? parseDateValue(request.deadline) : null;
   if (request.when !== undefined) applyWhen(app, task, request.when);
   applyListDestination(app, task, request);
+  if (request.heading !== undefined) moveToHeading(task, request.heading);
   if (request.completed !== undefined && request.completed) task.status = "completed";
   if (request.completed !== undefined && !request.completed && text(callValue(task, "status")) === "completed") task.status = "open";
   if (request.canceled !== undefined && request.canceled) task.status = "canceled";
@@ -930,6 +944,22 @@ function encodeQuery(value) {
   return encodeURIComponent(String(value)).replace(/[!'()*]/g, function (character) {
     return "%" + character.charCodeAt(0).toString(16).toUpperCase();
   });
+}
+
+// Headings are not in Things' scripting dictionary, so a heading move goes
+// through the URL scheme, which needs the auth token. The token comes from the
+// environment rather than the JSON request so it never shows up in `ps`.
+// openLocation is fire-and-forget: Things applies the move asynchronously.
+function moveToHeading(task, heading) {
+  if (!heading) throw new Error("heading may not be empty");
+  ObjC.import("Foundation");
+  var token = $.NSProcessInfo.processInfo.environment.objectForKey("THINGS_AUTH_TOKEN");
+  token = token && !token.isNil() ? token.js : "";
+  if (!token) throw new Error("THINGS_AUTH_TOKEN is required to move a todo under a heading");
+  var current = Application.currentApplication();
+  current.includeStandardAdditions = true;
+  current.openLocation("things:///update?id=" + encodeQuery(objectID(task)) +
+    "&heading=" + encodeQuery(heading) + "&auth-token=" + encodeQuery(token));
 }
 
 function searchTarget(query) {

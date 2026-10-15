@@ -1,13 +1,15 @@
 package cli
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"github.com/thaodangspace/things-cli/things"
 )
 
 func newUpdateCommand() *cobra.Command {
-	var title, notes, prependNotes, appendNotes, when, deadline, tags, addTags, list, listID string
+	var title, notes, prependNotes, appendNotes, when, deadline, tags, addTags, list, listID, heading string
 	var completed, canceled, project, wait bool
 	cmd := &cobra.Command{
 		Use:   "update <id>",
@@ -19,6 +21,29 @@ func newUpdateCommand() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("title") && title == "" {
+				return usageErrorf("--title may not be empty")
+			}
+			if err := validateWhen(when); err != nil {
+				return err
+			}
+			if err := validateDeadline(deadline); err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("heading") {
+				if heading == "" {
+					return usageErrorf("--heading may not be empty")
+				}
+				if project {
+					return usageErrorf("--heading applies to todos, not projects")
+				}
+				if os.Getenv(authTokenEnv) == "" {
+					return usageErrorf("--heading needs %s (Things > Settings > General > Enable Things URLs > Manage)", authTokenEnv)
+				}
+			}
+			if cmd.Flags().Changed("completed") && cmd.Flags().Changed("canceled") {
+				return usageErrorf("--completed and --canceled cannot both be set")
+			}
 			o := things.UpdateRequest{ID: args[0], Project: project}
 			setUpdateString(cmd, &o.Title, "title", title)
 			setUpdateString(cmd, &o.Notes, "notes", notes)
@@ -28,6 +53,7 @@ func newUpdateCommand() *cobra.Command {
 			setUpdateString(cmd, &o.Deadline, "deadline", deadline)
 			setUpdateString(cmd, &o.List, "list", list)
 			setUpdateString(cmd, &o.ListID, "list-id", listID)
+			setUpdateString(cmd, &o.Heading, "heading", heading)
 			if cmd.Flags().Changed("tags") {
 				v := splitCSV(tags)
 				o.Tags = &v
@@ -66,6 +92,7 @@ func newUpdateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&addTags, "add-tags", "", "add comma-separated tags")
 	cmd.Flags().StringVar(&list, "list", "", "destination list")
 	cmd.Flags().StringVar(&listID, "list-id", "", "destination list id")
+	cmd.Flags().StringVar(&heading, "heading", "", "move the todo under this heading of its project (needs "+authTokenEnv+")")
 	cmd.Flags().BoolVar(&completed, "completed", false, "mark completed/uncompleted")
 	cmd.Flags().BoolVar(&canceled, "canceled", false, "mark canceled/uncanceled")
 	cmd.Flags().BoolVar(&project, "project", false, "use update-project action")
@@ -79,3 +106,9 @@ func setUpdateString(cmd *cobra.Command, dest **string, name, value string) {
 		*dest = &v
 	}
 }
+
+// authTokenEnv holds the Things URL-scheme auth token. Only --heading needs it:
+// headings are not in Things' scripting dictionary, so the move goes through
+// things:///update. JXA reads the token from the environment, so it never
+// appears in the osascript argument list.
+const authTokenEnv = "THINGS_AUTH_TOKEN"

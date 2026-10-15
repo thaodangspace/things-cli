@@ -16,7 +16,7 @@
 
 ## Automation boundary
 
-All Things reads, writes, and navigation use `osascript -l JavaScript` and bundle identifier `com.culturedcode.ThingsMac`. User-controlled values are passed as JSON process arguments and are never interpolated into JXA source. The CLI never reads or writes Things' SQLite database and has no database path or auth-token configuration.
+All Things reads, writes, and navigation use `osascript -l JavaScript` and bundle identifier `com.culturedcode.ThingsMac`. User-controlled values are passed as JSON process arguments and are never interpolated into JXA source. The CLI never reads or writes Things' SQLite database and has no database path configuration. `update --heading NAME` is the one exception to the scripting-dictionary rule: headings are not scriptable, so it moves a todo under a heading of its project through the `things:///update` URL scheme. It needs the Things URL auth token in `THINGS_AUTH_TOKEN` (Things > Settings > General > Enable Things URLs > Manage); JXA reads it from the environment so it never appears in process arguments. The move is applied asynchronously by Things, and reads still report `heading: null`.
 
 Reads use native Things list membership/order for Inbox, Today, Upcoming, Anytime, Someday, Logbook, and Trash. General queries enumerate publicly reachable items, deduplicate by Things ID, and apply status/type/tag/area/project filters. Public automation does not expose checklist items or headings; responses retain `checklist: []` and `heading: null`.
 
