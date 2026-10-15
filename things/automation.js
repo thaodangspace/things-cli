@@ -546,18 +546,25 @@ function addTodo(app, request) {
     throw new Error("a todo cannot target both a list and a project");
   }
   var project = null;
-  var task;
   if (request.project || request.project_id) {
     project = resolveProjectTarget(app, request.project_id, request.project);
-    task = app.ToDo({ name: request.title });
-    project.toDos.push(task);
-  } else {
-    task = app.make({ new: "to do", withProperties: { name: request.title } });
   }
-  applyCommonFields(app, task, request);
-  if (!project) applyListDestination(app, task, request);
-  if (request.completed) task.status = "completed";
-  if (request.canceled) task.status = "canceled";
+  // Things 3.24+ ignores the location of `project.toDos.push(...)` / `make ... at`:
+  // the todo lands in the Inbox and the returned specifier no longer resolves.
+  // So create in the Inbox, re-resolve by id, and assign `project` afterwards.
+  var created = app.make({ new: "toDo", withProperties: { name: request.title } });
+  var task = app.toDos.byId(created.id());
+  try {
+    applyCommonFields(app, task, request);
+    if (project) task.project = project;
+    else applyListDestination(app, task, request);
+    if (request.completed) task.status = "completed";
+    if (request.canceled) task.status = "canceled";
+  } catch (error) {
+    // Never leave a half-built todo behind: callers retry failed adds.
+    try { app.delete(task); } catch (ignored) {}
+    throw error;
+  }
   if (request.reveal) task.show();
   return actionResult("add", task);
 }
@@ -568,7 +575,7 @@ function addProject(app, request) {
   if (request.area || request.area_id) project.area = resolveAreaTarget(app, request.area_id, request.area);
   var children = request.to_dos || [];
   for (var i = 0; i < children.length; i++) {
-    var child = app.make({ new: "to do", withProperties: { name: children[i] } });
+    var child = app.make({ new: "toDo", withProperties: { name: children[i] } });
     try {
       child.project = project;
     } catch (error) {

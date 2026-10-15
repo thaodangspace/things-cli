@@ -164,23 +164,31 @@ func TestExecScriptProjectTodoCreationContract(t *testing.T) {
 	}
 	source := strings.Replace(defaultAutomationScript, applicationLine,
 		`var app = contractApplication("com.culturedcode.ThingsMac");`, 1) + `
-var contractInserted = false;
+var contractAssigned = null;
+var contractDeleted = false;
+var contractIDReads = 0;
 var contractTask = {
-  id: function () {
-    if (!contractInserted) throw new Error("todo was not inserted into project");
-    return "created-id";
-  },
+  // First read resolves the freshly made todo; later reads (the result) prove the project was assigned.
+  id: function () { return contractIDReads++ === 0 || contractAssigned ? "created-id" : "unassigned-id"; },
   show: function () {}
 };
+Object.defineProperty(contractTask, "project", {
+  set: function (value) {
+    if (value !== contractProject) throw new Error("unexpected project assignment");
+    contractAssigned = value;
+  }
+});
+Object.defineProperty(contractTask, "notes", {
+  set: function (value) {
+    if (value === "boom") throw { toString: function () { return "notes write failed; rolled back=" + contractDeleted; } };
+  }
+});
 var contractProject = {
   exists: function () { return true; },
   id: function () { return "project-id"; },
   name: function () { return "vsee"; },
   toDos: {
-    push: function (task) {
-      if (task !== contractTask) throw new Error("unexpected todo inserted into project");
-      contractInserted = true;
-    }
+    push: function () { throw new Error("project.toDos.push must not be used (Things 3.24 drops it in the Inbox)"); }
   }
 };
 var missingProject = {
@@ -193,12 +201,18 @@ function contractApplication(identifier) {
       byId: function (id) { return id === "project-id" ? contractProject : missingProject; },
       byName: function (name) { return name === "vsee" ? contractProject : missingProject; }
     },
-    ToDo: function (properties) {
-      if (!properties || properties.name !== "test2") throw new Error("unexpected todo properties");
+    toDos: {
+      byId: function (id) {
+        if (id !== "created-id") throw new Error("unexpected todo id: " + id);
+        return contractTask;
+      }
+    },
+    make: function (spec) {
+      if (!spec || spec["new"] !== "toDo" || spec.withProperties.name !== "test2") throw new Error("unexpected make");
       return contractTask;
     },
-    make: function () { throw new Error("make must not be called for a project destination"); },
-    move: function () { throw new Error("move must not be called for a project destination"); }
+    move: function () { throw new Error("move must not be called for a project destination"); },
+    "delete": function (task) { if (task === contractTask) contractDeleted = true; }
   };
 }
 `
@@ -218,6 +232,12 @@ function contractApplication(identifier) {
 
 	var result ActionResult
 	err := RunJSON(context.Background(), ExecScript{Source: source}, "add",
+		AddRequest{Title: "test2", ProjectID: "project-id", Notes: "boom"}, &result)
+	if err == nil || !strings.Contains(err.Error(), "rolled back=true") {
+		t.Fatalf("error=%v, want failed add to delete the half-built todo", err)
+	}
+
+	err = RunJSON(context.Background(), ExecScript{Source: source}, "add",
 		AddRequest{Title: "test2", Project: "missing"}, &result)
 	if err == nil || !strings.Contains(err.Error(), "project not found: missing") {
 		t.Fatalf("error=%v, want project-not-found failure", err)
