@@ -32,7 +32,7 @@ vet: ## Run go vet
 tidy: ## Tidy Go modules
 	go mod tidy
 
-check: fmt tidy vet test ## Format, tidy, vet, and test
+check: fmt tidy vet test build ## Format, tidy, vet, test, and build
 
 docs-install: ## Install documentation site dependencies
 	npm --prefix docs ci

@@ -40,7 +40,7 @@ function objectName(object) {
 }
 
 function relationRef(object, property) {
-  var relation = callValue(object, property);
+  var relation = relationValue(object, property);
   if (!relation) return null;
   var id = objectID(relation);
   if (!id) return null;
@@ -145,6 +145,7 @@ function itemRecord(task, facts, properties, includeTagIDs) {
     start_date: dateOnly(values.activationDate),
     deadline: dateOnly(values.dueDate),
     creation_date: dateTime(values.creationDate),
+    modification_date: dateTime(values.modificationDate),
     completion_date: dateTime(completion),
     area: area,
     project: project,
@@ -320,6 +321,38 @@ function listMatch(record, universe, list) {
   return !!(fact && fact.lists && fact.lists.indexOf(list) >= 0);
 }
 
+function parseQueryDate(value) {
+  if (!value) return null;
+  var raw = String(value);
+  var dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  var date;
+  if (dateOnly) {
+    date = new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]), 0, 0, 0, 0);
+  } else {
+    date = new Date(raw);
+  }
+  if (isNaN(date.getTime())) throw new Error("invalid query date: " + raw);
+  return date;
+}
+
+function timestampMatches(value, after, before) {
+  if (!after && !before) return true;
+  if (!value) return false;
+  var date = parseQueryDate(value);
+  if (after && date.getTime() < parseQueryDate(after).getTime()) return false;
+  if (before && date.getTime() > parseQueryDate(before).getTime()) return false;
+  return true;
+}
+
+function dateMatches(value, after, before) {
+  if (!after && !before) return true;
+  if (!value) return false;
+  var actual = String(value);
+  if (after && actual < String(after)) return false;
+  if (before && actual > String(before)) return false;
+  return true;
+}
+
 function matches(record, universe, request) {
   if (request.status && record.status !== request.status &&
       !(request.status === "canceled" && record.status === "cancelled")) return false;
@@ -328,6 +361,15 @@ function matches(record, universe, request) {
   if (request.tag && !tagsMatch(record, request.tag)) return false;
   if (request.area && !exactRelationMatches(record.area, request.area)) return false;
   if (request.project && !exactRelationMatches(record.project, request.project)) return false;
+  if (request.text) {
+    var needle = String(request.text).toLowerCase();
+    if (record.title.toLowerCase().indexOf(needle) < 0 &&
+        record.notes.toLowerCase().indexOf(needle) < 0) return false;
+  }
+  if (!timestampMatches(record.creation_date, request.created_after, request.created_before)) return false;
+  if (!timestampMatches(record.modification_date, request.modified_after, request.modified_before)) return false;
+  if (!dateMatches(record.deadline, request.deadline_after, request.deadline_before)) return false;
+  if (!dateMatches(record.start_date, request.start_after, request.start_before)) return false;
   if (request.list && !listMatch(record, universe, request.list)) return false;
   return true;
 }
@@ -347,7 +389,8 @@ function sortRecords(records) {
   });
 }
 
-function limited(records, limit) {
+function limited(records, limit, all) {
+  if (all === true) return records;
   var n = Number(limit);
   if (!n || n < 1) n = 50;
   return records.slice(0, n);
@@ -372,6 +415,44 @@ function listRecordsRaw(app, kind, includeTagIDs) {
 function listRecords(app, kind, limit) {
   var result = listRecordsRaw(app, kind);
   return limited(result.records.map(cleanRecord), limit);
+}
+
+function compareQueryValues(a, b) {
+  if (a === null || a === undefined || a === "") return (b === null || b === undefined || b === "") ? 0 : 1;
+  if (b === null || b === undefined || b === "") return -1;
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
+function querySortRecords(records, sort) {
+  if (!sort || sort === "native") return records;
+  var key = sort;
+  return records.sort(function (a, b) {
+    var av;
+    var bv;
+    if (key === "title") {
+      av = a.title.toLowerCase();
+      bv = b.title.toLowerCase();
+    } else if (key === "created") {
+      av = a.creation_date;
+      bv = b.creation_date;
+    } else if (key === "modified") {
+      av = a.modification_date;
+      bv = b.modification_date;
+    } else if (key === "deadline") {
+      av = a.deadline;
+      bv = b.deadline;
+    } else if (key === "start") {
+      av = a.start_date;
+      bv = b.start_date;
+    } else {
+      return 0;
+    }
+    var result = compareQueryValues(av, bv);
+    if (result !== 0) return result;
+    return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+  });
 }
 
 function findItem(app, id) {
@@ -419,12 +500,15 @@ function areaRecords(app) {
   return sortRecords(areas);
 }
 
-function tagRecords(app) {
+function tagRecords(app, includeParent) {
   var tags = [];
   var source = app.tags();
   for (var i = 0; i < source.length; i++) {
     var id = objectID(source[i]);
-    if (id) tags.push({ id: id, title: objectName(source[i]) });
+    if (!id) continue;
+    var record = { id: id, title: objectName(source[i]) };
+    if (includeParent === true) record.parent = relationRef(source[i], "parentTag");
+    tags.push(record);
   }
   return sortRecords(tags);
 }
@@ -460,52 +544,148 @@ function relativeDate(value) {
   return null;
 }
 
-function resolveListTarget(app, id, name) {
+function resolveTarget(collection, id, name, label) {
+  // IDs are stable and must win when both an ID and a name are supplied.
   if (id) {
     try {
-      var byID = app.lists.byId(id);
+      var byID = collection.byId(id);
       if (byID.exists()) return byID;
     } catch (error) {}
   }
-  if (name) {
+  if (!name) throw new Error(label + " not found: " + (id || name));
+
+  // Enumerating the public collection lets us reject duplicate names instead
+  // of allowing byName to select an arbitrary object.
+  if (typeof collection === "function") {
+    var matches = [];
+    var source;
     try {
-      var byName = app.lists.byName(name);
-      if (byName.exists()) return byName;
-    } catch (error) {}
+      source = collection();
+    } catch (error) {
+      throw new Error("unable to enumerate " + label + "s while resolving " + name);
+    }
+    for (var i = 0; i < source.length; i++) {
+      if (objectName(source[i]) === name) matches.push(source[i]);
+    }
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) throw new Error(label + " name is ambiguous: " + name);
+    throw new Error(label + " not found: " + name);
   }
-  throw new Error("list not found: " + (id || name));
+
+  // This fallback is for scripting bridges that expose a non-enumerable
+  // collection. Things exposes callable collections, so production requests
+  // take the ambiguity-safe path above.
+  try {
+    var byName = collection.byName(name);
+    if (byName.exists()) return byName;
+  } catch (error) {}
+  throw new Error(label + " not found: " + name);
+}
+
+function resolveListTarget(app, id, name) {
+  return resolveTarget(app.lists, id, name, "list");
 }
 
 function resolveAreaTarget(app, id, name) {
-  if (id) {
-    try {
-      var byID = app.areas.byId(id);
-      if (byID.exists()) return byID;
-    } catch (error) {}
-  }
-  if (name) {
-    try {
-      var byName = app.areas.byName(name);
-      if (byName.exists()) return byName;
-    } catch (error) {}
-  }
-  throw new Error("area not found: " + (id || name));
+  return resolveTarget(app.areas, id, name, "area");
 }
 
 function resolveProjectTarget(app, id, name) {
-  if (id) {
-    try {
-      var byID = app.projects.byId(id);
-      if (byID.exists()) return byID;
-    } catch (error) {}
+  return resolveTarget(app.projects, id, name, "project");
+}
+
+function resolveTagTarget(app, id, name) {
+  return resolveTarget(app.tags, id, name, "tag");
+}
+
+function resolveRequestTarget(app, collectionResolver, request, label) {
+  var target = request || {};
+  return collectionResolver(app, target.id || "", target.name || "");
+}
+
+function tagParentChainContains(tag, targetID) {
+  var current = tag;
+  var seen = {};
+  while (current) {
+    var id = objectID(current);
+    if (!id || seen[id]) return false;
+    if (id === targetID) return true;
+    seen[id] = true;
+    current = relationValue(current, "parentTag");
   }
-  if (name) {
-    try {
-      var byName = app.projects.byName(name);
-      if (byName.exists()) return byName;
-    } catch (error) {}
+  return false;
+}
+
+function validateTagParent(tag, parent) {
+  var tagID = objectID(tag);
+  var parentID = objectID(parent);
+  if (!tagID || !parentID) throw new Error("tag parent must have an id");
+  if (tagID === parentID) throw new Error("a tag cannot be its own parent");
+  if (tagParentChainContains(parent, tagID)) throw new Error("tag parent would create a cycle");
+}
+
+function addAreaResource(app, request) {
+  if (!request.title || !text(request.title).trim()) throw new Error("area title is required");
+  var names = (request.tags || []).slice();
+  for (var i = 0; i < names.length; i++) {
+    var tag = resolveTagTarget(app, "", names[i]);
+    names[i] = objectName(tag);
   }
-  throw new Error("project not found: " + (id || name));
+  var area = app.make({ new: "area", withProperties: { name: request.title } });
+  if (request.tags !== undefined) area.tagNames = names.join(",");
+  return actionResult("area-add", area);
+}
+
+function renameAreaResource(app, request) {
+  var area = resolveRequestTarget(app, resolveAreaTarget, request.target, "area");
+  if (!request.title || !text(request.title).trim()) throw new Error("area title is required");
+  area.name = request.title;
+  return actionResult("area-rename", area);
+}
+
+function deleteAreaResource(app, request) {
+  var area = resolveRequestTarget(app, resolveAreaTarget, request.target, "area");
+  var id = objectID(area);
+  app.delete(area);
+  return { action: "area-delete", id: id };
+}
+
+function addTagResource(app, request) {
+  if (!request.title || !text(request.title).trim()) throw new Error("tag title is required");
+  var parent = null;
+  if (request.parent && (request.parent.id || request.parent.name)) {
+    parent = resolveRequestTarget(app, resolveTagTarget, request.parent, "tag");
+  }
+  var tag = app.make({ new: "tag", withProperties: { name: request.title } });
+  if (parent) tag.parentTag = parent;
+  return actionResult("tag-add", tag);
+}
+
+function renameTagResource(app, request) {
+  var tag = resolveRequestTarget(app, resolveTagTarget, request.target, "tag");
+  if (!request.title || !text(request.title).trim()) throw new Error("tag title is required");
+  tag.name = request.title;
+  return actionResult("tag-rename", tag);
+}
+
+function setTagParentResource(app, request) {
+  var tag = resolveRequestTarget(app, resolveTagTarget, request.target, "tag");
+  var id = objectID(tag);
+  if (request.root === true) {
+    deleteRelation(tag, "parentTag");
+  } else {
+    var parent = resolveRequestTarget(app, resolveTagTarget, request.parent, "tag");
+    validateTagParent(tag, parent);
+    tag.parentTag = parent;
+  }
+  return { action: "tag-set-parent", id: id };
+}
+
+function deleteTagResource(app, request) {
+  var tag = resolveRequestTarget(app, resolveTagTarget, request.target, "tag");
+  var id = objectID(tag);
+  app.delete(tag);
+  return { action: "tag-delete", id: id };
 }
 
 function applyWhen(app, task, value) {
@@ -538,6 +718,43 @@ function applyCommonFields(app, task, request) {
 
 function actionResult(action, task) {
   return { action: action, id: objectID(task) };
+}
+
+function relationValue(object, property) {
+  try {
+    if (!object) return null;
+    var value = object[property];
+    if (typeof value === "function") value = value();
+    if (!value) return null;
+    if (typeof value.exists === "function" && !value.exists()) return null;
+    return value;
+  } catch (error) {
+    return null;
+  }
+}
+
+function hasRelation(object, property) {
+  var relation = relationValue(object, property);
+  return !!relation && !!(objectID(relation) || objectName(relation));
+}
+
+function deleteRelation(object, property) {
+  var relation = relationValue(object, property);
+  if (!relation) return;
+  if (typeof relation.delete !== "function") {
+    throw new Error("Things does not support deleting the " + property + " relationship");
+  }
+  relation.delete();
+}
+
+// Things' JXA `make({ new: "to do" })` throws "Can't make class" on some
+// macOS/Things builds (the two-word "to do" class does not resolve), so build
+// the ToDo object and push it into a container instead -- the form Things
+// reliably accepts. `container` is a project or one of app.lists (e.g. Inbox).
+function newTodo(app, container, title) {
+  var task = app.ToDo({ name: title });
+  container.toDos.push(task);
+  return task;
 }
 
 function addTodo(app, request) {
@@ -620,9 +837,107 @@ function showTarget(app, target) {
     item.show();
     return { action: "show", id: target };
   }
+  // Built-in list aliases use stable list IDs, so they also work when Things
+  // is localized (for example, `trash` instead of the translated list name).
+  var alias = text(target).toLowerCase();
+  if (listDefinition(alias)) {
+    var nativeList = resolveList(app, alias);
+    if (!nativeList) throw new Error("Things list not found: " + alias);
+    nativeList.show();
+    return { action: "show", id: target };
+  }
   var list = resolveListTarget(app, target, target);
   list.show();
   return { action: "show", id: target };
+}
+
+function isUpcomingListTarget(target) {
+  return objectID(target) === "TMCalendarListSource";
+}
+
+function validateMoveRequest(request) {
+  var destinations = 0;
+  if (request.list || request.list_id) destinations++;
+  if (request.project || request.project_id) destinations++;
+  if (request.area || request.area_id) destinations++;
+  if (destinations === 0) throw new Error("no destination supplied");
+  if (destinations > 1) throw new Error("move accepts exactly one destination");
+}
+
+function moveItem(app, request) {
+  validateMoveRequest(request);
+  var task = findItem(app, request.id);
+  if (!task) throw new Error("item not found: " + request.id);
+  var isProject = className(task) === "project";
+  if (request.list || request.list_id) {
+    var destination = resolveListTarget(app, request.list_id, request.list);
+    if (isUpcomingListTarget(destination)) {
+      throw new Error("moving directly to Upcoming is not supported; use update --when to schedule");
+    }
+    app.move(task, { to: destination });
+    return actionResult("move", task);
+  }
+  if (request.project || request.project_id) {
+    if (isProject) throw new Error("a project cannot be moved into another project: " + request.id);
+    task.project = resolveProjectTarget(app, request.project_id, request.project);
+    return actionResult("move", task);
+  }
+  if (request.area || request.area_id) {
+    task.area = resolveAreaTarget(app, request.area_id, request.area);
+    return actionResult("move", task);
+  }
+  throw new Error("no destination supplied");
+}
+
+function deleteItem(app, request) {
+  var task = findItem(app, request.id);
+  if (!task) throw new Error("item not found: " + request.id);
+  var id = objectID(task);
+  // Things' public delete command moves a task or project, including its
+  // children, to Trash. Do not emulate this through private storage APIs.
+  app.delete(task);
+  return { action: "delete", id: id };
+}
+
+function emptyTrash(app) {
+  // This is intentionally a separate operation: unlike delete, it cannot be
+  // undone through Things' Trash list.
+  app.emptyTrash();
+  return { action: "empty-trash" };
+}
+
+function detachItem(app, request) {
+  var all = request.all === true;
+  if (all && request.project !== request.area) {
+    throw new Error("--all must clear both project and area relationships");
+  }
+  if (!all && request.project && request.area) {
+    throw new Error("--project and --area cannot both be set; use --all to clear both");
+  }
+  if (!all && !request.project && !request.area) {
+    throw new Error("no detach scope supplied");
+  }
+  if (all) {
+    request.project = true;
+    request.area = true;
+  }
+
+  var task = findItem(app, request.id);
+  if (!task) throw new Error("item not found: " + request.id);
+  var isProject = className(task) === "project";
+  if (request.project && isProject && !all) {
+    throw new Error("--project detach is not valid for a project: " + request.id);
+  }
+  if (request.project && !isProject && !all && !hasRelation(task, "project")) {
+    throw new Error("item is not currently in a project: " + request.id);
+  }
+  if (request.area && !all && !hasRelation(task, "area")) {
+    throw new Error("item is not currently in an area: " + request.id);
+  }
+  // Projects do not have a project parent; --all still applies to their area.
+  if (request.project && !isProject) deleteRelation(task, "project");
+  if (request.area) deleteRelation(task, "area");
+  return actionResult("detach", task);
 }
 
 function encodeQuery(value) {
@@ -657,6 +972,12 @@ function searchTarget(query) {
 function dispatch(operation, request) {
   if (operation === "health") return { operation: operation, request: request };
   var app = Application("com.culturedcode.ThingsMac");
+  if (operation === "diagnose") {
+    // Reading application metadata is intentionally the smallest public
+    // operation that both resolves Things and exercises Automation/TCC.
+    var applicationName = typeof app.name === "function" ? app.name() : "Things 3";
+    return { application: text(applicationName), bundle_identifier: "com.culturedcode.ThingsMac" };
+  }
   if (operation === "list") return listRecords(app, request.list, request.limit);
   if (operation === "query") {
     if (request.list) {
@@ -664,13 +985,17 @@ function dispatch(operation, request) {
       var nativeRecords = nativeList.records.filter(function (record) {
         return matches(record, nativeList.universe, request);
       });
-      return limited(nativeRecords.map(cleanRecord), request.limit);
+      var nativeOrdered = querySortRecords(nativeRecords, request.sort);
+      if (request.reverse === true) nativeOrdered.reverse();
+      return limited(nativeOrdered.map(cleanRecord), request.limit, request.all);
     }
     var universe = collectUniverse(app, !!request.tag);
     var records = recordsFromUniverse(universe).filter(function (record) {
       return matches(record, universe, request);
     });
-    return limited(sortRecords(records), request.limit).map(cleanRecord);
+    var ordered = querySortRecords(records, request.sort || "title");
+    if (request.reverse === true) ordered.reverse();
+    return limited(ordered, request.limit, request.all).map(cleanRecord);
   }
   if (operation === "get") {
     var task = findItem(app, request.id);
@@ -679,10 +1004,21 @@ function dispatch(operation, request) {
   }
   if (operation === "list-projects") return projectRecords(app, request);
   if (operation === "list-areas") return areaRecords(app);
-  if (operation === "list-tags") return tagRecords(app);
+  if (operation === "list-tags") return tagRecords(app, request.tree === true);
+  if (operation === "area-add") return addAreaResource(app, request);
+  if (operation === "area-rename") return renameAreaResource(app, request);
+  if (operation === "area-delete") return deleteAreaResource(app, request);
+  if (operation === "tag-add") return addTagResource(app, request);
+  if (operation === "tag-rename") return renameTagResource(app, request);
+  if (operation === "tag-set-parent") return setTagParentResource(app, request);
+  if (operation === "tag-delete") return deleteTagResource(app, request);
   if (operation === "add") return addTodo(app, request);
   if (operation === "add-project") return addProject(app, request);
   if (operation === "update") return updateTask(app, request);
+  if (operation === "move") return moveItem(app, request);
+  if (operation === "detach") return detachItem(app, request);
+  if (operation === "delete") return deleteItem(app, request);
+  if (operation === "empty-trash") return emptyTrash(app);
   if (operation === "complete") {
     var completeTask = findItem(app, request.id);
     if (!completeTask) throw new Error("item not found: " + request.id);
@@ -717,8 +1053,20 @@ function run(argv) {
     return success(dispatch(operation, request));
   } catch (error) {
     var message = text(error);
-    if (message.indexOf("Error: item not found") === 0 || message.indexOf("item not found") === 0) {
+    var lower = message.toLowerCase();
+    if (message.indexOf("Error: item not found") === 0 ||
+        message.indexOf("item not found") === 0 ||
+        message.indexOf("area not found") >= 0 ||
+        message.indexOf("tag not found") >= 0 ||
+        message.indexOf("project not found") >= 0 ||
+        message.indexOf("list not found") >= 0) {
       return failure("not_found", message);
+    }
+    if (lower.indexOf("-1743") >= 0 || lower.indexOf("not authorized") >= 0 || lower.indexOf("not allowed") >= 0) {
+      return failure("permission_denied", "Automation permission was denied");
+    }
+    if (lower.indexOf("-2700") >= 0 || lower.indexOf("-1728") >= 0 || lower.indexOf("application can't be found") >= 0 || lower.indexOf("can't get application") >= 0 || lower.indexOf("cannot get application") >= 0 || lower.indexOf("application isn't running") >= 0) {
+      return failure("application_missing", "Things 3 could not be resolved");
     }
     return failure("application_error", message);
   }

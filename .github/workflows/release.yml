@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out source and tag history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          tag_commit="$(git rev-list -n 1 "$GITHUB_REF")"
+          if [[ -z "$tag_commit" || "$tag_commit" != "$GITHUB_SHA" ]]; then
+            echo "::error::${GITHUB_REF} does not resolve to the workflow commit ($GITHUB_SHA)."
+            exit 1
+          fi
+
+          git fetch origin main --no-tags
+          if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
+            echo "::error::Release tags must point at a commit reachable from main."
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Verify Homebrew token
+        env:
+          HAS_TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
+        run: |
+          if [[ "$HAS_TAP_GITHUB_TOKEN" != "true" ]]; then
+            echo '::error::TAP_GITHUB_TOKEN is required to publish the Homebrew cask.'
+            exit 1
+          fi
+
+      - name: Install Syft for SBOM generation
+        uses: anchore/sbom-action/download-syft@v0.24.0
+
+      - name: Release with GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: v2.17.1
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'dist/*'

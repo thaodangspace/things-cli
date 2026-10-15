@@ -68,6 +68,11 @@ func newUpdateCommand() *cobra.Command {
 			if cmd.Flags().Changed("canceled") {
 				o.Canceled = &canceled
 			}
+			var err error
+			o, err = validateUpdateRequest(o)
+			if err != nil {
+				return err
+			}
 			ctx, cancel := withTimeout(cmd)
 			defer cancel()
 			res, err := currentThingsService().Update(ctx, o)

@@ -2,11 +2,14 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
+import cloudflare from '@astrojs/cloudflare';
+
 // Set SITE_URL in production when a canonical URL and sitemap are desired.
 const site = process.env.SITE_URL || undefined;
 
 export default defineConfig({
   site,
+
   integrations: [
     starlight({
       title: 'things-cli',
@@ -42,4 +45,6 @@ export default defineConfig({
       customCss: ['./src/styles/custom.css'],
     }),
   ],
+
+  adapter: cloudflare(),
 });

@@ -1,6 +1,6 @@
 ---
 name: things-cli
-description: Use the things-cli command-line tool to read and manipulate Things 3 tasks/projects on macOS. Use when the user asks to inspect Things lists/tasks, query by status/type/tag/area/project, list areas/tags/projects, add or update tasks/projects, complete/cancel tasks, or open Things UI from the shell.
+description: Use the things-cli command-line tool to read and manipulate Things 3 tasks/projects on macOS. Use when the user asks to inspect Things lists/tasks, query by status/type/tag/area/project, list areas/tags/projects, add or update tasks/projects, complete/cancel/delete tasks, empty Trash, or open Things UI from the shell.
 ---
 
 # Things CLI
@@ -24,6 +24,20 @@ If the executable is not on `PATH`, install it with:
 ```bash
 go install github.com/thaodangspace/things-cli/cmd/things-cli@latest
 ```
+
+## Diagnostics
+
+Run the strictly read-only environment check before troubleshooting:
+
+```bash
+things-cli doctor [--json]
+things-cli doctor --human
+```
+
+It checks macOS, the exact `/usr/bin/osascript` dependency, Things 3,
+Automation/TCC permission, the JSON protocol, and the CLI version. It reports
+all checks, does not open System Settings, and identifies the invoking process
+that needs permission.
 
 ## Read operations
 
@@ -50,10 +64,16 @@ Query publicly reachable tasks/projects, deduplicated by Things ID:
 ```bash
 things-cli query [--status open|completed|canceled] \
   [--type to-do|project] [--tag ID-or-title] [--area ID-or-title] \
-  [--project ID-or-title] [--limit N]
+  [--project ID-or-title] [--text QUERY] \
+  [--created-after RFC3339] [--created-before RFC3339] \
+  [--modified-after RFC3339] [--modified-before RFC3339] \
+  [--deadline-after YYYY-MM-DD] [--deadline-before YYYY-MM-DD] \
+  [--start-after YYYY-MM-DD] [--start-before YYYY-MM-DD] \
+  [--sort native|title|created|modified|deadline|start] [--reverse] \
+  [--limit N | --all]
 ```
 
-`--status` also accepts `done` and `cancelled`; `--type` accepts `todo` and `task` as aliases. List metadata:
+`--status` also accepts `done` and `cancelled`; `--type` accepts `todo` and `task` as aliases. `--text` matches title and notes case-insensitively without opening the Things search UI. Date bounds are inclusive; creation/modification filters use RFC3339 (date-only values mean local midnight), while deadline/start filters use `YYYY-MM-DD`. Missing dates do not match. Results default to 50; `--all` removes the cap and cannot be combined with `--limit`. Broad `--all` queries may be slower because public automation enumerates Things items. Sorting is stable with ID tie-breaking, and `native` preserves native list order. List metadata:
 
 ```bash
 things-cli list-projects [--area ID-or-title] [--limit N]
@@ -97,7 +117,40 @@ things-cli update <id> [--title TITLE] [--notes NOTES] \
   [--project] [--wait]
 ```
 
-`--project` selects the Things project update action. Other status/navigation commands are:
+`--project` selects the Things project update action. Move an item to a built-in list, project, or area (exactly one destination):
+
+```bash
+things-cli move <id> (--list LIST-NAME|--list-id LIST-ID) \
+  (--project PROJECT-NAME|--project-id PROJECT-ID) \
+  (--area AREA-NAME|--area-id AREA-ID) [--wait]
+```
+
+A to-do can move to a list, project, or area; a project can move to a list or an
+area but never into another project. Moving directly into Upcoming is not
+supported — schedule with `update --when ...` instead.
+
+Detach relationships:
+
+```bash
+things-cli detach <id> (--project|--area|--all) [--wait]
+```
+
+`--project` detaches a to-do from its project; `--area` detaches a to-do or
+project from its area; `--all` clears both where applicable.
+
+Destructive commands require extra care:
+
+```bash
+things-cli delete <id> [--reveal]
+things-cli empty-trash --yes
+```
+
+`delete` moves a to-do or project to Things Trash, including project children.
+`empty-trash --yes` is irreversible and permanently removes everything in
+Trash. Both are synchronous writes; never retry after a timeout because the
+outcome may be indeterminate.
+
+Other status/navigation commands are:
 
 ```bash
 things-cli complete <id> [--wait]

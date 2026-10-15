@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -57,7 +58,8 @@ func TestAutomationClientListAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item.Title != "Today task" || item.Tags == nil || item.Tags[0] != "work" {
+	if item.Title != "Today task" || item.Tags == nil || item.Tags[0] != "work" ||
+		item.ModificationDate == nil || *item.ModificationDate != "2026-07-23T09:30:00Z" {
 		t.Fatalf("item=%+v", item)
 	}
 	if !reflect.DeepEqual(runner.ops, []string{"list", "get"}) {
@@ -86,6 +88,48 @@ func TestAutomationClientQueryAndFilters(t *testing.T) {
 	request, ok := runner.requests[0].(queryRequest)
 	if !ok || request.Tag != "work" || request.Limit != 7 {
 		t.Fatalf("request=%#v", runner.requests[0])
+	}
+}
+
+func TestAutomationClientQueryRequestIncludesExtendedFilters(t *testing.T) {
+	runner := newReadFixtureRunner(t)
+	client := NewAutomationClient(runner)
+	_, err := client.Query(context.Background(), Filter{
+		Text:           "review",
+		CreatedAfter:   "2026-08-01T00:00:00+07:00",
+		CreatedBefore:  "2026-08-07",
+		ModifiedAfter:  "2026-08-01T00:00:00Z",
+		ModifiedBefore: "2026-08-07T00:00:00Z",
+		DeadlineAfter:  "2026-08-01",
+		DeadlineBefore: "2026-08-07",
+		StartAfter:     "2026-08-01",
+		StartBefore:    "2026-08-07",
+		Sort:           "modified",
+		Reverse:        true,
+		All:            true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, ok := runner.requests[0].(queryRequest)
+	if !ok {
+		t.Fatalf("request=%#v", runner.requests[0])
+	}
+	if request.Text != "review" || request.CreatedAfter != "2026-08-01T00:00:00+07:00" ||
+		request.ModifiedBefore != "2026-08-07T00:00:00Z" || request.DeadlineBefore != "2026-08-07" ||
+		request.Sort != "modified" || !request.Reverse || !request.All || request.Limit != 0 {
+		t.Fatalf("request=%+v", request)
+	}
+}
+
+func TestAutomationClientRejectsAllWithLimit(t *testing.T) {
+	runner := newReadFixtureRunner(t)
+	_, err := NewAutomationClient(runner).Query(context.Background(), Filter{All: true, Limit: 1})
+	if err == nil || !strings.Contains(err.Error(), "--all cannot be combined") {
+		t.Fatalf("error=%v", err)
+	}
+	if len(runner.ops) != 0 {
+		t.Fatalf("operations=%v", runner.ops)
 	}
 }
 

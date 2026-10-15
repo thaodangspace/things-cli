@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // AutomationClient implements the Things service over the public scripting
@@ -25,13 +26,25 @@ type listRequest struct {
 }
 
 type queryRequest struct {
-	Status  string   `json:"status,omitempty"`
-	Type    string   `json:"type,omitempty"`
-	Tag     string   `json:"tag,omitempty"`
-	Area    string   `json:"area,omitempty"`
-	Project string   `json:"project,omitempty"`
-	Limit   int      `json:"limit"`
-	List    ListKind `json:"list,omitempty"`
+	Status         string   `json:"status,omitempty"`
+	Type           string   `json:"type,omitempty"`
+	Tag            string   `json:"tag,omitempty"`
+	Area           string   `json:"area,omitempty"`
+	Project        string   `json:"project,omitempty"`
+	Text           string   `json:"text,omitempty"`
+	CreatedAfter   string   `json:"created_after,omitempty"`
+	CreatedBefore  string   `json:"created_before,omitempty"`
+	ModifiedAfter  string   `json:"modified_after,omitempty"`
+	ModifiedBefore string   `json:"modified_before,omitempty"`
+	DeadlineAfter  string   `json:"deadline_after,omitempty"`
+	DeadlineBefore string   `json:"deadline_before,omitempty"`
+	StartAfter     string   `json:"start_after,omitempty"`
+	StartBefore    string   `json:"start_before,omitempty"`
+	Sort           string   `json:"sort,omitempty"`
+	Reverse        bool     `json:"reverse,omitempty"`
+	All            bool     `json:"all,omitempty"`
+	Limit          int      `json:"limit"`
+	List           ListKind `json:"list,omitempty"`
 }
 
 type projectsRequest struct {
@@ -41,6 +54,10 @@ type projectsRequest struct {
 
 type idRequest struct {
 	ID string `json:"id"`
+}
+
+type tagListRequest struct {
+	Tree bool `json:"tree"`
 }
 
 func (c *AutomationClient) run(ctx context.Context, operation string, request any, out any) error {
@@ -65,7 +82,10 @@ func (c *AutomationClient) Query(ctx context.Context, filter Filter) ([]Item, er
 	if err := validateFilter(filter); err != nil {
 		return nil, err
 	}
-	if filter.Limit <= 0 {
+	if filter.All && filter.Limit > 0 {
+		return nil, fmt.Errorf("--all cannot be combined with --limit")
+	}
+	if !filter.All && filter.Limit <= 0 {
 		filter.Limit = 50
 	}
 	status := filter.Status
@@ -78,7 +98,13 @@ func (c *AutomationClient) Query(ctx context.Context, filter Filter) ([]Item, er
 	}
 	request := queryRequest{
 		Status: status, Type: itemType, Tag: filter.Tag,
-		Area: filter.Area, Project: filter.Project, Limit: filter.Limit, List: filter.List,
+		Area: filter.Area, Project: filter.Project, Text: filter.Text,
+		CreatedAfter: filter.CreatedAfter, CreatedBefore: filter.CreatedBefore,
+		ModifiedAfter: filter.ModifiedAfter, ModifiedBefore: filter.ModifiedBefore,
+		DeadlineAfter: filter.DeadlineAfter, DeadlineBefore: filter.DeadlineBefore,
+		StartAfter: filter.StartAfter, StartBefore: filter.StartBefore,
+		Sort: filter.Sort, Reverse: filter.Reverse, All: filter.All,
+		Limit: filter.Limit, List: filter.List,
 	}
 	var items []Item
 	if err := c.run(ctx, "query", request, &items); err != nil {
@@ -128,8 +154,16 @@ func (c *AutomationClient) ListAreas(ctx context.Context) ([]Area, error) {
 }
 
 func (c *AutomationClient) ListTags(ctx context.Context) ([]Tag, error) {
+	return c.listTags(ctx, false)
+}
+
+func (c *AutomationClient) ListTagsTree(ctx context.Context) ([]Tag, error) {
+	return c.listTags(ctx, true)
+}
+
+func (c *AutomationClient) listTags(ctx context.Context, tree bool) ([]Tag, error) {
 	var tags []Tag
-	if err := c.run(ctx, "list-tags", struct{}{}, &tags); err != nil {
+	if err := c.run(ctx, "list-tags", tagListRequest{Tree: tree}, &tags); err != nil {
 		return nil, err
 	}
 	if tags == nil {
@@ -147,6 +181,43 @@ func validateFilter(filter Filter) error {
 	if filter.Type != "" {
 		if _, ok := TypeValue(filter.Type); !ok {
 			return fmt.Errorf("unknown type %q", filter.Type)
+		}
+	}
+	if strings.TrimSpace(filter.Text) == "" && filter.Text != "" {
+		return fmt.Errorf("text filter may not be empty")
+	}
+	if filter.Sort != "" {
+		switch filter.Sort {
+		case "native", "title", "created", "modified", "deadline", "start":
+		default:
+			return fmt.Errorf("unknown sort %q", filter.Sort)
+		}
+	}
+	for _, field := range []struct {
+		name     string
+		value    string
+		dateOnly bool
+	}{
+		{"created-after", filter.CreatedAfter, false},
+		{"created-before", filter.CreatedBefore, false},
+		{"modified-after", filter.ModifiedAfter, false},
+		{"modified-before", filter.ModifiedBefore, false},
+		{"deadline-after", filter.DeadlineAfter, true},
+		{"deadline-before", filter.DeadlineBefore, true},
+		{"start-after", filter.StartAfter, true},
+		{"start-before", filter.StartBefore, true},
+	} {
+		if field.value == "" {
+			continue
+		}
+		if field.dateOnly {
+			if _, err := time.Parse("2006-01-02", field.value); err != nil {
+				return fmt.Errorf("invalid %s %q; use yyyy-mm-dd", field.name, field.value)
+			}
+		} else if _, err := time.Parse(time.RFC3339, field.value); err != nil {
+			if _, dateErr := time.Parse("2006-01-02", field.value); dateErr != nil {
+				return fmt.Errorf("invalid %s %q; use RFC3339", field.name, field.value)
+			}
 		}
 	}
 	return nil
@@ -174,6 +245,38 @@ func (c *AutomationClient) AddProject(ctx context.Context, request AddProjectReq
 func (c *AutomationClient) Update(ctx context.Context, request UpdateRequest) (ActionResult, error) {
 	var result ActionResult
 	if err := c.run(ctx, "update", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) Move(ctx context.Context, request MoveRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "move", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) Detach(ctx context.Context, request DetachRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "detach", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) Delete(ctx context.Context, id string) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "delete", idRequest{ID: id}, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) EmptyTrash(ctx context.Context) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "empty-trash", struct{}{}, &result); err != nil {
 		return ActionResult{}, err
 	}
 	return result, nil
@@ -215,4 +318,61 @@ func (c *AutomationClient) Search(ctx context.Context, query string) (ActionResu
 	return result, nil
 }
 
+func (c *AutomationClient) AddArea(ctx context.Context, request AddAreaRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "area-add", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) RenameArea(ctx context.Context, request RenameAreaRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "area-rename", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) DeleteArea(ctx context.Context, request DeleteAreaRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "area-delete", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) AddTag(ctx context.Context, request AddTagRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "tag-add", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) RenameTag(ctx context.Context, request RenameTagRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "tag-rename", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) SetTagParent(ctx context.Context, request SetTagParentRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "tag-set-parent", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
+func (c *AutomationClient) DeleteTag(ctx context.Context, request DeleteTagRequest) (ActionResult, error) {
+	var result ActionResult
+	if err := c.run(ctx, "tag-delete", request, &result); err != nil {
+		return ActionResult{}, err
+	}
+	return result, nil
+}
+
 var _ Service = (*AutomationClient)(nil)
+var _ AreaTagService = (*AutomationClient)(nil)

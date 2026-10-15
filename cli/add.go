@@ -13,33 +13,18 @@ func newAddCommand() *cobra.Command {
 		Use:   "add",
 		Short: "Add a Things todo via macOS automation",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			t, err := requireFlag("title", title)
-			if err != nil {
-				return err
-			}
-			if err := validateWhen(when); err != nil {
-				return err
-			}
-			if err := validateDeadline(deadline); err != nil {
-				return err
-			}
-			if completed && canceled {
-				return usageErrorf("--completed and --canceled cannot both be set")
-			}
-			if (project != "" || projectID != "") && (list != "" || listID != "") {
-				return usageErrorf("--project/--project-id cannot be combined with --list/--list-id")
-			}
-			if err := validateCaps(t, notes, nil); err != nil {
-				return err
-			}
-			ctx, cancel := withTimeout(cmd)
-			defer cancel()
-			res, err := currentThingsService().Add(ctx, things.AddRequest{
-				Title: t, Notes: notes, When: when, Deadline: deadline,
+			request, err := validateAddRequest(things.AddRequest{
+				Title: title, Notes: notes, When: when, Deadline: deadline,
 				Tags: splitCSV(tags), List: list, ListID: listID,
 				Project: project, ProjectID: projectID,
 				Completed: completed, Canceled: canceled, Reveal: reveal,
 			})
+			if err != nil {
+				return err
+			}
+			ctx, cancel := withTimeout(cmd)
+			defer cancel()
+			res, err := currentThingsService().Add(ctx, request)
 			if err != nil {
 				return err
 			}

@@ -40,7 +40,9 @@ for parsing.
 
 Check the exit code as well as the JSON `ok` field. A command can fail before a
 normal response is available, for example when its arguments are invalid or
-Things cannot be reached.
+Things cannot be reached. `doctor` is an exception: even on exit 1 it returns
+`ok: false` together with its complete diagnostic `data.checks` list and stable
+check codes where applicable.
 
 ## Runtime failures
 
